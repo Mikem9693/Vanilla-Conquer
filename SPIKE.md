@@ -108,3 +108,99 @@ Session 1 (default settings, windowed), as reported by the owner:
 Session 2 (with `RawInput=no`): the owner reported the mouse working correctly. Exit code 0.
 
 Result: the revised acceptance is met. The game launches, reaches the main menu, starts the first demo campaign mission, units move and sound plays. The owner confirmed no crashes or errors in either session; both exited with code 0 and their logs contain only the PipeWire notice.
+
+## Session 2: First Emscripten build (ticket 2, discovery only)
+
+Goal: find out what stops this code building for the browser. CMake files may change; C++ source may not.
+
+**Result: the Red Alert target compiles and links for the browser once three build blockers are dealt with, all of them small.** Output: `build-web/vanillara.js` (430 KB) and `build-web/vanillara.wasm` (13 MB, with debug info). It has not been run in a browser. No C++ source was changed.
+
+### Environment
+
+| | |
+|---|---|
+| Emscripten | 7.0.0 (`emcc`, based on clang 24), installed with emsdk in `~/emsdk` (1.8 GB, outside the repo) |
+| SDL2 | Emscripten's own port, 2.32.10 (same version as the native build), built on first use |
+| OpenAL | Emscripten's built-in implementation (headers in its sysroot, library written in JavaScript) |
+| CMake | 4.2.3, "Unix Makefiles" generator, as in ticket 1 |
+| Build time | about 19 seconds for a full build with 16 jobs |
+
+### Commands
+
+```sh
+# One-time install. Nothing is added to ~/.bashrc.
+git clone https://github.com/emscripten-core/emsdk.git ~/emsdk
+~/emsdk/emsdk install latest
+~/emsdk/emsdk activate latest
+
+# In every new shell: put emcc and emcmake on the PATH.
+source ~/emsdk/emsdk_env.sh
+
+# Configure. emcmake makes CMake use the Emscripten compiler and its own headers and libraries.
+# -w hides warnings (as CI does); -ferror-limit=0 reports every error instead of stopping at 20 per file.
+emcmake cmake -S . -B build-web -DBUILD_VANILLATD=OFF "-DVC_CXX_FLAGS=-w;-ferror-limit=0"
+
+# Build Red Alert only. -k keeps going after a failed file, so one pass collects all errors.
+cmake --build build-web --target VanillaRA -j16 -- -k > build-web/build-N.log 2>&1
+```
+
+`build-web/` and `build-web-nonet/` are ignored by git (the `/build*` rule). Build logs are kept inside them.
+
+### Build blockers
+
+"Seen" means the error appeared in a log. Sizes are for the proper fix.
+
+| # | File | Type of error | Status | Likely fix | Size |
+|---|---|---|---|---|---|
+| 1 | `CMakeLists.txt:144`, `cmake/FindSDL2.cmake` | Configure: `Could NOT find SDL2 (missing: SDL2_LIBRARY SDL2_INCLUDE_DIR)`. The finder looks for a library file; Emscripten supplies SDL2 through a compiler flag instead. | Seen (baseline). Fixed in CMake. | `if(EMSCRIPTEN)`: skip the finder, add `--use-port=sdl2` to compile and link options. Done. | Small |
+| 2 | `CMakeLists.txt` OpenAL block, `cmake/FindOpenAL.cmake` | Configure: the same kind of failure is expected for OpenAL. | **Not seen**: changed in the same edit as blocker 1, so the failure itself was never observed. | `if(EMSCRIPTEN)`: skip the finder, add the sysroot `include/AL` folder (the code includes `<al.h>`, not `<AL/al.h>`), link `openal`. Done. | Small |
+| 3 | `common/wwstd.h:263` | Compile: `static declaration of 'strupr' follows non-static declaration`. Emscripten's `<string.h>` already declares `strupr`. One error in each of 27 files of the `common` library; the build stopped there, so the other two targets were not reached in that round. | Seen (round 1). **Routed around**, not fixed. | Proper fix is in C++: skip the `strupr` helper when `__EMSCRIPTEN__` is defined (about 2 lines), then delete the CMake workaround. | Small |
+
+After these, round 2 compiled all 268 objects with 0 errors and linked. The only link message is a notice that optimisation is limited because debug info was requested.
+
+Build rounds:
+
+| Round | Setup | Result |
+|---|---|---|
+| Baseline | No repo changes | Configure fails, blocker 1 |
+| 1 | CMake changes for SDL2 and OpenAL | 27 errors, all blocker 3; 68 objects built |
+| 2 | Plus the `strupr` workaround | 0 errors, links. Networking and sound on |
+| 3 | Round 2 plus `-DNETWORKING=OFF`, in `build-web-nonet/` | 0 errors, links (259 objects, 12.6 MB `.wasm`) |
+
+### CMake changes (uncommitted)
+
+All in the top-level `CMakeLists.txt`, 32 changed lines, each inside `if(EMSCRIPTEN)` so the native build takes the same path as before. Checked: the native build still configures against Ubuntu's SDL2 and OpenAL and builds with 0 errors.
+
+1. SDL2: use Emscripten's port instead of `find_package(SDL2)`.
+2. OpenAL: use Emscripten's headers and library instead of `find_package(OpenAL)`.
+3. **Temporary workaround for blocker 3**, marked `SPIKE WORKAROUND`: CMake writes `build-web/web_shim.h` and passes it with `-include` (include this file first in every source). The file renames Emscripten's `strupr` declaration so it no longer clashes. Remove it when `wwstd.h` is fixed.
+
+### What did not block
+
+- No other compile or link errors in the 268 files. No assembly or CPU-specific code turned up.
+- The networking code compiles as is: Emscripten ships the POSIX socket headers it uses (`common/sockets.h`, `common/wspudp.cpp`). Compiling is not the same as working, see below.
+- The `-fsigned-char` and `-fcheck-new` checks in `cmake/Compilers.cmake` both pass.
+- CMake prints a warning seven times that CMake 4.2.3 does not support Emscripten shared libraries. Harmless here: everything is linked statically.
+
+### Beyond this ticket: first look at running it
+
+One check outside the ticket's question, done without a browser and without game data: `timeout 20 node build-web/vanillara.js`. The program loads, `main()` runs and reaches `Set_Video_Mode`, then SDL's video start-up fails with `ReferenceError: screen is not defined`. Node has no browser screen, so this says only that start-up gets as far as video.
+
+Not tested, noticed while reading. Candidates for the next tickets:
+
+- **The game never returns control.** `main()` runs its own loops and waits with `nanosleep` (`common/mssleep.h`, used from 4 places in 2 files). A browser page freezes unless the program hands control back each frame. The usual options are Emscripten's Asyncify feature or restructuring the main loop; neither was tried. Probably the largest piece of work.
+- **Game data.** The web build sees an empty in-memory file system, not `~/ra-data`. The `.MIX` files and `redalert.ini` have to be supplied at run time, in a way that keeps them out of the repo.
+- **No HTML page yet.** The build produces only `.js` and `.wasm`; a page with a canvas is needed to host them.
+- **Networking.** Browsers cannot open UDP sockets. `-DNETWORKING=OFF` builds cleanly (round 3) and is the likely starting point.
+- **Size.** The 13 MB `.wasm` is an `-O2 -g` build. Size without debug info was not measured.
+- **Warnings were hidden** (`-w`) in every round, so there is no warning list for the web compiler. The three possible buffer overruns from ticket 1 are still open.
+
+### Focus events upstream (for session 3)
+
+- **Commit `6d135b8`** (Cameron Cawley, 2023-06-17, "Implement window focus events with SDL 1.2") adds 10 lines to `common/wwkeyboard_sdl1.cpp` and nothing else. In the SDL 1.2 event loop it handles `SDL_ACTIVEEVENT`: when the `SDL_APPINPUTFOCUS` bit is set it calls `Focus_Restore()` on gain and `Focus_Loss()` on loss.
+- **It copies what the SDL2 backend already did.** Commit `69976a2` (Toni Spets, 2020-12-01, "Manage focus in SDL2 windowed mode") is the real design. `common/wwkeyboard_sdl2.cpp:86-98` maps window events `EXPOSED`, `RESTORED`, `FOCUS_GAINED` to `Focus_Restore()` and `HIDDEN`, `MINIMIZED`, `FOCUS_LOST` to `Focus_Loss()`. A web build uses the SDL2 backend, so this is the path that matters.
+- **The pattern:** the keyboard backend (the only place that reads SDL events) translates a platform event into two game-level calls. The backend declares them (`void Focus_Loss(); void Focus_Restore();` at the top of the file) and each game defines them.
+- **Red Alert's handlers** are in `redalert/winstub.cpp:79` and `:89`. Loss: `GameInFocus = false`, pause movie audio, suspend the music, stop the sound buffer. Restore: `GameInFocus = true`, resume movie audio, flag the whole map for redraw, restart the sound buffer.
+- **Who reads `GameInFocus`:** `common/wwmouse.cpp:174` (skip cursor drawing), `common/gbuffer.cpp:273` (refuse to lock the screen surface), `common/soundio_common.cpp:1118` (skip sound upkeep), `redalert/theme.cpp:197` (do not start the next music track).
+- **Watch out for session 3:** `Bootstrap()` at `redalert/init.cpp:2412-2414` loops on `Keyboard->Check()` until `GameInFocus` is true. In a browser a loop like that never lets the page handle events, so if the tab starts without focus it would hang. Not tested; noticed while reading.
+- Not checked yet: which browser events Emscripten's SDL2 turns into `FOCUS_LOST` / `HIDDEN` (tab switch, window blur).

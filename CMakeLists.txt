@@ -87,6 +87,15 @@ set(CMAKE_FIND_FRAMEWORK "LAST")
 
 add_definitions(-DTRUE_FALSE_DEFINED)
 
+if(EMSCRIPTEN)
+    # SPIKE WORKAROUND (see SPIKE.md, session 2): Emscripten's <string.h> declares strupr, which
+    # clashes with the static strupr in common/wwstd.h. Until wwstd.h is fixed, a generated
+    # header included before everything else renames Emscripten's declaration out of the way.
+    file(WRITE "${CMAKE_BINARY_DIR}/web_shim.h"
+        "#define strupr emscripten_strupr\n#include <string.h>\n#undef strupr\n")
+    add_compile_options(-include "${CMAKE_BINARY_DIR}/web_shim.h")
+endif()
+
 if(GERMAN)
     add_definitions(-DGERMAN)
 elseif(FRENCH)
@@ -140,10 +149,16 @@ if(SDL1)
 endif()
 
 if(SDL2)
-    message("Find path is ${CMAKE_FIND_ROOT_PATH}")
-    find_package(SDL2 REQUIRED)
-    list(APPEND VANILLA_LIBS ${SDL2_LIBRARY})
-    include_directories(${SDL2_INCLUDE_DIR})
+    if(EMSCRIPTEN)
+        # Emscripten builds SDL2 itself (a "port") when this flag is on the compile and link lines.
+        add_compile_options(--use-port=sdl2)
+        add_link_options(--use-port=sdl2)
+    else()
+        message("Find path is ${CMAKE_FIND_ROOT_PATH}")
+        find_package(SDL2 REQUIRED)
+        list(APPEND VANILLA_LIBS ${SDL2_LIBRARY})
+        include_directories(${SDL2_INCLUDE_DIR})
+    endif()
 
     # winuser.h defines VK_ macros but it can be prevented
     if(WIN32)
@@ -153,8 +168,14 @@ if(SDL2)
 endif()
 
 if(OPENAL)
-    find_package(OpenAL REQUIRED)
-    list(APPEND VANILLA_LIBS OpenAL::OpenAL)
+    if(EMSCRIPTEN)
+        # Emscripten ships the OpenAL headers and implements the library in JavaScript (-lopenal).
+        include_directories(SYSTEM ${EMSCRIPTEN_SYSROOT}/include/AL)
+        list(APPEND VANILLA_LIBS openal)
+    else()
+        find_package(OpenAL REQUIRED)
+        list(APPEND VANILLA_LIBS OpenAL::OpenAL)
+    endif()
     set(DSOUND OFF)
 endif()
 
