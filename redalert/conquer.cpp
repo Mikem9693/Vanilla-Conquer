@@ -2366,6 +2366,12 @@ void Play_Movie(char const* name, ThemeType theme, bool clrscrn, bool immediate)
 
     Play_Movie_GlyphX(name, theme, immediate);
     return;
+#elif defined(__EMSCRIPTEN__)
+    /*
+    ** Web build: movies are skipped. The movie player waits in loops that never hand control
+    ** back to the browser (VQA_Play, and the focus wait in VQ_Call_Back), which locks up the tab.
+    */
+    return;
 #else
 
 #ifdef CHEAT_KEYS
