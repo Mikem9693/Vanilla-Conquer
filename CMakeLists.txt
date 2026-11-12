@@ -88,12 +88,24 @@ set(CMAKE_FIND_FRAMEWORK "LAST")
 add_definitions(-DTRUE_FALSE_DEFINED)
 
 if(EMSCRIPTEN)
-    # SPIKE WORKAROUND (see SPIKE.md, session 2): Emscripten's <string.h> declares strupr, which
-    # clashes with the static strupr in common/wwstd.h. Until wwstd.h is fixed, a generated
-    # header included before everything else renames Emscripten's declaration out of the way.
-    file(WRITE "${CMAKE_BINARY_DIR}/web_shim.h"
-        "#define strupr emscripten_strupr\n#include <string.h>\n#undef strupr\n")
-    add_compile_options(-include "${CMAKE_BINARY_DIR}/web_shim.h")
+    # SPIKE (see SPIKE.md, session 3): settings needed to run in a browser.
+    # ASYNCIFY lets emscripten_sleep() (common/mssleep.h) pause the game and return control to the
+    # browser. Emscripten's default 64 KB stack and 4 KB Asyncify stack are too small for this code.
+    add_link_options(-sASYNCIFY=1 -sASYNCIFY_STACK_SIZE=65536 -sSTACK_SIZE=8MB -sALLOW_MEMORY_GROWTH=1)
+
+    # Also write an HTML page (Emscripten's stock page with a canvas) next to the .js and .wasm.
+    set(CMAKE_EXECUTABLE_SUFFIX ".html")
+
+    # Local testing only: package a game data directory into the build as <target>.data.
+    # Off unless WEB_DATA_DIR is given. The packaged output must never be committed or published.
+    set(WEB_DATA_DIR "" CACHE PATH "Local game data directory to package into the web build")
+    if(WEB_DATA_DIR)
+        file(WRITE "${CMAKE_BINARY_DIR}/web_data/REDALERT.INI"
+            "[Video]\nWindowed=yes\n\n[Mouse]\nRawInput=no\n\n[Intro]\nPlayIntro=no\n")
+        add_link_options(
+            "SHELL:--preload-file ${WEB_DATA_DIR}@/"
+            "SHELL:--preload-file ${CMAKE_BINARY_DIR}/web_data/REDALERT.INI@/REDALERT.INI")
+    endif()
 endif()
 
 if(GERMAN)

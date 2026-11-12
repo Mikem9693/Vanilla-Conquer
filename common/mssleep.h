@@ -20,12 +20,20 @@
 #include <time.h>
 #endif
 
+#ifdef __EMSCRIPTEN__
+/* Web build: nanosleep busy-waits on the browser's main thread and freezes the page.
+** emscripten_sleep (needs -sASYNCIFY at link time) hands control back to the browser instead. */
+#include <emscripten.h>
+#endif
+
 /**
  * Yield the current thread for at least us microseconds.
  */
 static inline void us_sleep(unsigned us)
 {
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep((us + 999) / 1000);
+#elif defined(_WIN32)
     Sleep((us + 999) / 1000);
 #else
     struct timespec ts;
@@ -40,7 +48,9 @@ static inline void us_sleep(unsigned us)
  */
 static inline void ms_sleep(unsigned ms)
 {
-#ifdef _WIN32
+#ifdef __EMSCRIPTEN__
+    emscripten_sleep(ms);
+#elif defined(_WIN32)
     Sleep(ms);
 #else
     struct timespec ts;
