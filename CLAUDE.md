@@ -6,9 +6,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - Goal: browser (WebAssembly) port of Red Alert from this source.
 - The owner is learning: briefly explain new concepts and commands.
-- Current phase: 0, launch-week spike, branch `spike/web`.
+- Current phase: phase 0 (launch-week spike) is complete as of 12 Nov 2026: the first demo mission plays to completion in the browser. Branch `spike/web`.
 - Game data lives in `~/ra-data/demo` and must never be committed.
 - Rules: small diffs; explain commands before running them; summarise build logs instead of printing them in full.
+
+### Game data loading (decided 12 Nov 2026)
+
+- Two data routes:
+  1. Hosted: fetch the 2008 freeware Red Alert data from a separate hosted location (not this repo), for instant play.
+  2. Player-supplied: the player picks their own files.
+- Either route stores the data in IndexedDB (the browser's built-in database for a site's own data), so it loads instantly on later visits.
+- The data source is a setting, so the hosted route can be switched off without code changes.
+- The full game has two `MAIN.MIX` files (Allied and Soviet discs) with the same name; the loader must handle both.
+- Rules (unchanged): no game data ever goes in this repo or in committed build output. The packaged demo in `build-web/` is for local testing only.
+- Not in scope yet: building the loader. It will be its own ticket in phase 2.
 
 ## What this is
 
