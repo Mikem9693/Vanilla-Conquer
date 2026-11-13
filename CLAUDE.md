@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project context
 
 - Goal: browser (WebAssembly) port of Red Alert from this source.
+- Scope: Red Alert only. Tiberian Dawn is not built or tested for this project (owner, 13 Nov 2026).
 - The owner is learning: briefly explain new concepts and commands.
 - Current phase: phase 0 (launch-week spike) is complete as of 12 Nov 2026: the first demo mission plays to completion in the browser. Branch `spike/web`.
 - Game data lives in `~/ra-data/demo` and must never be committed.

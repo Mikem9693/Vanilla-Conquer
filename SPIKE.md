@@ -1447,3 +1447,70 @@ To pick up, in order:
 2. Work items 1 to 4 as the first multiplayer ticket (they settle the main risk cheaply).
 
 Other open items from Session 5 stand: higher-resolution ticket decisions, clang-format 14 check, full Tiberian Dawn build and CI presets, leftover folders.
+
+## Session 7: Skirmish data size (13 Nov 2026)
+
+**Result: no further trimming. A script now rebuilds the existing 28.1 MB skirmish pack from the Allied disc, byte for byte. Loading the music archive after start-up would cut the up-front download from about 28.1 MB to 17.7 MB raw, but needs a small code change; not implemented.**
+
+Evidence labels: [obs] observed by running, [code] read from code, [inf] inferred, [est] estimate.
+
+### Scope decision
+
+The ticket asked for file logging, a file-by-file trimmed pack and play tests. Ticket 4a had already produced the inventory and a 28.1 MB pack that the owner has played in the browser. The conductor's guess (not measured) was that file-by-file trimming would save 1 to 3 MB [est]. Owner's decision, verbatim: "File sizes are acceptable as they are - reducing by under 5mb is not cost effective. No more trimming needed". So no logging was added, no new trimmed pack was made and no play tests were run; no C++ or CMake changes.
+
+Inventory: see "Step 2: data size" > "What is inside the two archives" earlier in this file.
+
+### Pack size
+
+| File | Bytes |
+|---|---:|
+| MAIN.MIX | 6,060,518 |
+| REDALERT.MIX | 11,650,760 |
+| SCORES.MIX | 10,386,815 |
+| Total | 28,098,093 |
+
+Against 479,651,622 bytes for the original pair (MAIN.MIX 454,605,294 + REDALERT.MIX 25,046,328) [obs]. All three files are byte-identical (`cmp`) to `~/ra-data/skirmish-web`, checked by the worker and re-checked by the conductor [obs]. That is the pack the owner played, so no new play test was needed [inf].
+
+### How to rebuild
+
+```sh
+scripts/make-skirmish-pack.sh ~/ra-data/full/allied/disc ~/ra-data/skirmish
+```
+
+- Arguments: the disc folder (MAIN.MIX, and REDALERT.MIX beside it or in `INSTALL/`), the output folder, and optionally the path to vanillamix (default `build-tools/vanillamix`; build command in the 4a notes, "Tool: vanillamix").
+- Takes about 1 second; extracts only the entries it needs [obs].
+- Refuses an output folder inside the repo, and leaves nothing in `~/.config` (vanillamix runs with a temporary `XDG_CONFIG_HOME`) [obs].
+- Uses GNU `realpath -m`, so it needs GNU coreutils (not the macOS default) [inf].
+
+### Download size as a web server would send it
+
+| File | Raw bytes | gzip -9 bytes |
+|---|---:|---:|
+| vanillara.data | 28,098,196 | 20,959,980 |
+| vanillara.wasm | 14,293,059 | 4,887,575 |
+| vanillara.js | 455,640 | 102,569 |
+| Total | 42,846,895 | 25,950,124 |
+
+[obs] brotli is not installed, so it was not measured. The wasm is built with -O2 -g, so the hosted build could be smaller without debug info [inf].
+
+### On-demand loading (worker C; full text in `~/ra-data/session7/ondemand.md`)
+
+- Recommendation: load MAIN.MIX, REDALERT.MIX and the INI up front (about 17.7 MB raw instead of 28.1 MB) and fetch SCORES.MIX (10.4 MB) in the background after the game starts. Work size S. Not implemented.
+- It does not work today without a code change [code; first three points re-checked by the conductor]: track availability is stored once by `ThemeClass::Scan()` (`redalert/theme.cpp:595-599`), called only at start-up right after SCORES.MIX is registered (`redalert/init.cpp:2365-2367`); an archive missing at start-up returns early from its constructor (`common/mixfile.h:277`) before it joins the archive list (`:347`); `Is_Allowed` rejects tracks whose flag is false (`theme.cpp:500`).
+- Smallest change [inf]: one new function in `redalert/init.cpp` that does `new MFCD("SCORES.MIX", &FastKey)` then `ThemeClass::Scan()`, called by game code from a polling point (not from JavaScript, because of Asyncify).
+- Delivery [inf]: JavaScript `fetch`, then `FS.writeFile` into the in-memory file system; write to a temporary name and rename when complete, so a half-written file is never opened. The phase 2 IndexedDB loader needs the same final step and can reuse it.
+- Not recommended now: speech, terrain, voices and sound effects sit inside MAIN.MIX / REDALERT.MIX, so deferring them means repacking. EVA speech (2.0 MB) would be safe (silent when missing, `redalert/audio.cpp:740-741`) [code]; terrain is needed before the first frame and only an assert guards it (`redalert/display.cpp:371-380`) [code]; voices and effects are cached at start-up (`redalert/init.cpp:2662-2666`) [code]. Deferring speech plus the unused terrain set too would give about 14.7 MB up front, at M to L work for 3 MB more [est].
+- Worker C was least sure of: the polling point and half-written files; whether heap growth copes with a 10 MB file written late; that the session 5 `theme.cpp` fix keeps "no tracks available" safe until music arrives. The gzip size of the 17.7 MB core alone was not measured.
+
+### Open items
+
+- Late-music loading as its own ticket (S).
+- brotli size.
+- Whether the hosted build should drop -g from the wasm.
+- The Soviet disc's REDALERT.MIX was not compared with the Allied one (same size [obs]).
+- Tiberian Dawn build is out of scope; this replaces the session 5 open item "Full Tiberian Dawn build".
+- New folders outside the repo: `~/ra-data/skirmish` (duplicate of skirmish-web) and `~/ra-data/session7`; earlier leftover folders still stand.
+
+### Hand-off (end of session 7)
+
+Files changed: `scripts/make-skirmish-pack.sh` (new), SPIKE.md, CLAUDE.md; not committed at the time of writing. `build-web/` untouched.
