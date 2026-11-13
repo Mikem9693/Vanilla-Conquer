@@ -1186,17 +1186,66 @@ Conductor's read-only check (grep only): the resolution is fixed in code. `redal
 
 Not scoped: what else is tied to 640x400 (map view, sidebar, radar, menus, mouse). It is shared game code, so by the project rule it would go behind a setting, default unchanged. First step: a read-only scoping pass. Until then, the 2x fullscreen change is the interim.
 
+#### Scoping pass (read from code, not tested)
+
+Owner's request, quoted exactly: "Complete first step of ticket (scoping pass)". Done by one read-only worker (no edits, no builds), looking at `redalert/` and `common/` only.
+
+Target evaluated: an optional larger internal resolution, first 960x540 (exactly 2x on 1920x1080), generally any size at or above 640x400. The map area grows; sidebar, radar, power bar and tabs keep native size; menus may stay 640x400, centred.
+
+**Verdict: feasible, size M (worker's estimate: about 4-7 focused days). No blockers found.** The video layer, mouse mapping, edge scrolling, radar and `Set_View_Dimensions` already follow the buffer size. Most work is in two places: sidebar, power and tab positions are 320-space constants (roughly 15 sites), and menus and dialogs mix absolute and centred coordinates.
+
+| Area | Status | Pointers | Size |
+|---|---|---|---|
+| Buffers, video | Follows buffer | `externs.h:61-65`; `startup.cpp:343-436` (all from `ScreenWidth`/`ScreenHeight`); `video_sdl2.cpp:221,387,764-769` (generic w,h). Default `BoxingAspectRatio` is "16:10" (`settings.cpp:28`) and would distort 16:9. The old 640x480 fallback was removed in `0fc12f6` ("Remove legacy Resolution option"). | S |
+| Tactical view | Follows buffer | `display.cpp:543-597` derives size from `SeenBuff` or a cell count; `CellRedraw` is sized from `MAP_CELL_TOTAL`. `sidebar.cpp:987` hard-codes 20 cells: `((320 - SIDE_WIDTH) / ICON_PIXEL_W) * RESFACTOR`. | S |
+| Chrome | Mixed | Radar follows (`radar.cpp:149`). Tied to constants: `sidebar.h:62-94` (`SIDE_X = 320 - 80`), `sidebar.cpp:151,213,225,240-242,305-323,761-765`, `power.h:87`, `power.cpp:140,257`, `tab.cpp:145-173`. Strips use positions relative to X (`sidebar.cpp:1171`). | S-M |
+| Menus, movies | Mixed | Centred: `loaddlg.cpp:119`, `gamedlg.cpp:65`. Absolute: `menus.cpp:475`, `mplayer.cpp:72`, `seditdlg.cpp:104`. Score and map-select use 320x200 buffers (`score.cpp:359`, `mapsel.cpp:141`). VQA is 640x400 (`init.cpp:1276`), centred inside its own frame. 42 direct `VisiblePage`/`HiddenPage` uses. | M |
+| Mouse, scroll | Follows buffer | `video_sdl2.cpp:133,448`, `wwkeyboard_sdl2.cpp:79`, `scroll.cpp:110`, `wwmouse.cpp:382` | S |
+| Determinism, saves | Judged safe | View reads in logic files only flag redraws or set audio pan (`aircraft.cpp:1008`, `vessel.cpp:610`, `audio.cpp:360-368`). `TacLepton*` sits in `MouseClass`, saved raw (`iomap.cpp:256`), but `Sidebar::Init_IO` calls `Activate`, which recomputes the view (`sidebar.cpp:339-341`). Struct layout unchanged. | S |
+| Prior art | None useful | `fd1da1e` (output scaling), `0fc12f6` (Resolution option removed); no setting exists. | - |
+
+File names without a folder are in `redalert/`, except `video_sdl2.cpp`, `wwkeyboard_sdl2.cpp`, `wwmouse.cpp` and `settings.cpp`, which are in `common/`. That folder attribution is the conductor's reading of the report, not checked file by file.
+
+Conductor's spot checks (read-only, matched the report): `redalert/sidebar.cpp:987`, `redalert/sidebar.h:62`, `common/settings.cpp:28`, and commit `0fc12f6` exists with that title. Nothing else was independently checked.
+
+Staged plan proposed by the scoping worker (not approved, not started):
+
+1. Add a `Settings.Video` field for internal width/height (default 640x400) and apply it in `startup.cpp:334` and at the `GBUFF` init. Add one runtime offset (`SideDX = ScreenWidth - 640`) to the sidebar, power and tab sites above; change `sidebar.cpp:987` to `(ScreenWidth - 160) / 24` cells; fill the strip under the sidebar with black; set boxing to 16:9. Test: browser at 960x540 shows more map, sidebar clicks work, default build matches the old screenshot pixel for pixel.
+2. Make the game height follow the buffer and handle maps smaller than the view (`Confine_Rect`, not checked). Test: small skirmish maps, scrolling at map edges.
+3. Menus centred: attach `SeenBuff`/`HidPage` as a 640x400 sub-viewport centred in the big pages (the `startup.cpp:423` mechanism), apply a mouse offset in `wwkeyboard_sdl2`, switch back to the full-size viewport on entering the game. Test: every dialog, score screen, map selection, movies.
+4. In-game dialogs (`goptions`, `msgbox.cpp:90`, `scenario.cpp:1439`), message input width (`init.cpp:1147`), and a save/load round trip across resolutions.
+
+Risks:
+
+- Desync: judged low, but drawing code that consumes random numbers was not checked.
+- Saves: low risk; a cross-resolution load relies on `Init_IO`.
+- Shared `common/` and settings changes also affect Tiberian Dawn and need upstream-style review.
+- Remastered: `REMASTER_BUILD` uses 3072x3072 with separate paths, so changes should stay behind `#ifndef REMASTER_BUILD`.
+- Tiberian Dawn has the same 320-space sidebar, display and dialog structure and would need parallel work (stated by the worker; TD was out of scope and not examined).
+
+Open questions for the owner (not yet asked):
+
+1. Arbitrary sizes, or a fixed list?
+2. Minimum map size, and should the view be clamped to it?
+3. Menus centred (stage 3), or left at top-left?
+4. Is a 16:9 boxing default acceptable, and how to keep the default faithful?
+5. Should the in-game Options dialog expose the setting, or only the INI?
+
+### Native music (4a question answered)
+
+The owner's words, quoted exactly: "native music was heard throughout skirmish play".
+
 ### Open items
 
-1. The higher-resolution ticket (above).
+1. The higher-resolution ticket (above): scoping pass done; the owner's answers to its open questions are next.
 2. clang-format 14 not run on any changed file, including `common/video_sdl2.cpp` (it may reformat the `EM_ASM` block).
 3. Full Tiberian Dawn build and the CI presets not run.
-4. Still open from 4a: whether native music was heard in the skirmish itself or only at the menu; the leftover folders `~/.config/vanilla-conquer/vanillatools/`, `~/ra-data/allied-extract`, `~/ra-data/skirmish-min-build`, `~/ra-data/smoke-min`, `~/ra-data/smoke-full`.
+4. Still open from 4a: the leftover folders `~/.config/vanilla-conquer/vanillatools/`, `~/ra-data/allied-extract`, `~/ra-data/skirmish-min-build`, `~/ra-data/smoke-min`, `~/ra-data/smoke-full`.
 5. If the crash returns: the rigged-crate reproduction from the 4a hand-off is still available as a follow-up.
 
 ### Hand-off (end of session 5)
 
-State (checked by the conductor): `build-web/` holds the current build with the normal `skirmish-web` data; nothing listening on ports 8000-8009. Files changed this session: `common/video_sdl2.cpp`, `redalert/drive.cpp`, `redalert/theme.cpp`, `tiberiandawn/theme.cpp`, `SPIKE.md`. These were committed at the end of the session (owner's choice: "Worker commits"); not pushed. As before, `build-web/` must never be committed, uploaded or deployed while `vanillara.data` is in it.
+State (checked by the conductor): `build-web/` holds the current build with the normal `skirmish-web` data; nothing listening on ports 8000-8009. Files changed this session: `common/video_sdl2.cpp`, `redalert/drive.cpp`, `redalert/theme.cpp`, `tiberiandawn/theme.cpp`, `SPIKE.md`. These were committed at the end of the session (owner's choice: "Worker commits"); not pushed. That commit is `b0d0536`; its co-author line reads "Claude Opus 5.5" where the conductor had specified "Claude Fable 5.2" (left as is; owner informed). The scoping-pass notes were committed afterwards in a separate `SPIKE.md`-only commit. As before, `build-web/` must never be committed, uploaded or deployed while `vanillara.data` is in it.
 
 Results:
 
@@ -1211,9 +1260,9 @@ Results:
 
 To pick up, in order:
 
-1. Higher-resolution ticket: read-only scoping pass first.
+1. Higher-resolution ticket: scoping pass done. Next: the owner answers its open questions, then stage 1 as its own ticket.
 2. clang-format 14 check on the changed files; full Tiberian Dawn build and CI presets.
-3. The 4a leftovers: the native music question and the leftover folders.
+3. The 4a leftover folders.
 
 To play the current build in the browser:
 
