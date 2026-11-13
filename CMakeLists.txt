@@ -101,7 +101,7 @@ if(EMSCRIPTEN)
     set(WEB_DATA_DIR "" CACHE PATH "Local game data directory to package into the web build")
     if(WEB_DATA_DIR)
         file(WRITE "${CMAKE_BINARY_DIR}/web_data/REDALERT.INI"
-            "[Video]\nWindowed=yes\n\n[Mouse]\nRawInput=no\n\n[Intro]\nPlayIntro=no\n")
+            "[Video]\nWindowed=yes\n\n[Mouse]\nRawInput=no\n\n[Intro]\nPlayIntro=no\n\n[Options]\nMultiplayerScoreVolume=0.25\n")
         add_link_options(
             "SHELL:--preload-file ${WEB_DATA_DIR}@/"
             "SHELL:--preload-file ${CMAKE_BINARY_DIR}/web_data/REDALERT.INI@/REDALERT.INI")

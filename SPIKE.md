@@ -451,3 +451,581 @@ Open items:
 2. Owner to re-check the rebuilt page in a normal browser window: hard reload with Ctrl+Shift+R, then start a mission.
 3. The red console line from session 3: the only 404 the page causes is the browser's own request for `/favicon.ico`, now answered by an empty `build-web/favicon.ico`. Owner to confirm the red line is gone after a hard reload (Ctrl+Shift+R).
 4. The phase 2 loader ticket.
+
+## Session 4a: Skirmish with full game data (ticket 4a)
+
+Goal: a skirmish against the AI works natively and in the browser, and we know the smallest data set a skirmish needs.
+
+The owner's release priority, stated on 13 Nov 2026:
+
+1. Hostable skirmish.
+2. Multiplayer.
+3. Campaigns.
+
+Data used: the Allied disc of the 2008 freeware release, in `~/ra-data/full/allied/disc` (`MAIN.MIX` at the root, `REDALERT.MIX` in `INSTALL/`). As before, nothing from it goes in the repo.
+
+| Step | What | Status |
+|---|---|---|
+| 1 | Native skirmish | Done: owner's play test passed (13 Nov 2026) |
+| 2 | Smallest data set a skirmish needs (data-size study) | Done (investigation only; candidate set reaches the menu natively, skirmish not yet played with it) |
+| 3 | Skirmish in the browser | Skirmish runs for 10+ minutes in the owner's browser, then a crash (diagnosed from the crashed build, not reproduced, not fixed) |
+
+### Step 1: native skirmish
+
+#### Set-up (all outside the repo)
+
+- **Data folder:** `~/ra-data/skirmish-full/` holds two symbolic links (pointers to the original files, not copies):
+  - `MAIN.MIX -> ~/ra-data/full/allied/disc/MAIN.MIX`
+  - `REDALERT.MIX -> ~/ra-data/full/allied/disc/INSTALL/REDALERT.MIX`
+
+  The game's file lookup works through the links (observed).
+- **Config file:** in `~/.config/vanilla-conquer/vanillara/redalert.ini` only the `DataPath` line changed, from `/home/mikem93/ra-data/demo` to `/home/mikem93/ra-data/skirmish-full` (a one-line diff). The old file is kept beside it as `redalert.ini.demo-backup`. To go back to the demo data, restore that line or the backup.
+
+#### Commands
+
+```sh
+# Make the data folder and link the two archives into it (no copying).
+mkdir -p ~/ra-data/skirmish-full && ln -s ~/ra-data/full/allied/disc/INSTALL/REDALERT.MIX ~/ra-data/skirmish-full/REDALERT.MIX && ln -s ~/ra-data/full/allied/disc/MAIN.MIX ~/ra-data/skirmish-full/MAIN.MIX
+
+# Rebuild the native game. Incremental: only changed files are recompiled, no reconfigure.
+cmake --build build -j16
+
+# In ~/.config/vanilla-conquer/vanillara/: keep a copy of the INI (-p keeps its date),
+# then point DataPath at the new folder. \r is there because the file has Windows line endings.
+cp -p redalert.ini redalert.ini.demo-backup
+sed -i 's|^DataPath=/home/mikem93/ra-data/demo\r$|DataPath=/home/mikem93/ra-data/skirmish-full\r|' redalert.ini
+
+# Smoke test: start the game and stop it after 20 seconds.
+timeout 20 ./build/vanillara
+```
+
+#### Results
+
+| Check | Result |
+|---|---|
+| Native build | Exit 0, 0 errors, 0 warnings reported. It recompiled `common` and relinked `build/vanillara`. |
+| Smoke test (observed) | Exit code 124: still running when the 20 second timer fired. Output was only the known PipeWire notice (two `pw.conf` lines and one `[ALSOFT]` line). No process left behind. Nobody saw the window, so which screen it reached is not known. |
+
+#### The skirmish map list
+
+Observed with a read-only checker program, built outside the repo against `build/common/libcommon.a`. It registers the MIX files in the same order as `Init_Bootstrap_Mixfiles` / `Init_Secondary_Mixfiles` and reads `MISSIONS.PKT` the way `Read_Scenario_Descriptions` does.
+
+- `MISSIONS.PKT` (795 bytes) is inside `GENERAL.MIX`, which is itself inside `MAIN.MIX`.
+- Its `[Missions]` list has 24 entries, and all 24 scenario files are found: `SCM01EA` to `SCM24EA`, all in `GENERAL.MIX`.
+
+Read from code:
+
+- `Read_Scenario_Descriptions` (`redalert/session.cpp:743`) is called once at start-up, from `SessionClass::One_Time` (`session.cpp:248`).
+- It also scans for loose `*.MPR` map files (`:773-800`, `:839-866`). There are none.
+- `CSTRIKE.PKT` and `AFTMATH.PKT` (the expansion map lists) are only read when `EXPAND.MIX` / `EXPAND2.MIX` exist (`:809`, `:827`). They do not.
+
+Expected, not yet seen on screen: all 24 maps appear in the skirmish dialog (`redalert/nulldlg.cpp:1709-1737`).
+
+#### What the two archives contain
+
+Observed with the checker. Sizes come with step 2.
+
+| Archive | Contains |
+|---|---|
+| `REDALERT.MIX` | `LOCAL.MIX`, `LORES.MIX`, `HIRES.MIX`, `SPEECH.MIX` |
+| `MAIN.MIX` | `CONQUER.MIX`, `GENERAL.MIX`, `MOVIES1.MIX`, `SCORES.MIX`, `SOUNDS.MIX`, `RUSSIAN.MIX`, `ALLIES.MIX` |
+
+`RULES.INI` is in `LOCAL.MIX`.
+
+#### CD checks
+
+The original game asks for a specific disc at some points. Read from code, plus the smoke run not exiting at start-up: nothing on the skirmish path asks for a disc, and no second disc is needed.
+
+- `Init_CDROM_Access` sets `RequiredCD` from `Force_CD_Available(-1)` (`redalert/init.cpp:2229`).
+- The active `Force_CD_Available` is the `FIXIT_VERSION_3` one at `redalert/conquer.cpp:3813-3831`. It goes through `Change_Local_Dir` (`conquer.cpp:3710`), which accepts the data folder itself.
+- `Read_Scenario_INI` uses `RequiredCD = -1` (any disc) for non-campaign games unless the map is from an expansion (`redalert/scenario.cpp:2071-2085`, check at `:2120`).
+- Missing optional archives, all harmless by the code: `MOVIES2.MIX` (`MOVIES1.MIX` is used, `init.cpp:2355`), `EXPAND.MIX`, `EXPAND2.MIX`, `HIRES1.MIX`.
+- `Is_Demo` is false because `DEMOPIC.PCX` is absent (`conquer.cpp:4608`, file check at `:4614`), so the full menu shows.
+
+Not checked at run time: that `Change_Local_Dir` behaves as read.
+
+#### Movies
+
+Read from code, data observed:
+
+- **The Red Alert logo movie now plays at every native launch, even with `PlayIntro=no`.** `init.cpp:317-320` calls `Play_Intro()`, which plays `REDINTRO` (`init.cpp:1227-1230`), and `REDINTRO.VQA` is in `MOVIES1.MIX`. The demo did not have it. Esc skips it.
+- **No movie plays at skirmish start.** All 24 maps set `Intro`, `Brief`, `Win`, `Lose` and `Action` to `<none>` (observed with the checker). The start-of-mission calls are at `scenario.cpp:376-410`.
+- **At skirmish end** the game shows a score screen and returns before any movie (`scenario.cpp:920-931`). The win movie calls come after that, at `scenario.cpp:937-940`; the lose movie call is at `:1207`.
+
+None of this was seen on screen.
+
+#### Menu path to a skirmish
+
+Read from code:
+
+1. Main menu, "Multiplayer Game" (`redalert/menus.cpp:604`).
+2. "Skirmish" (`redalert/mplayer.cpp:155`, `:319-323`), which opens `Com_Scenario_Dialog(true)` (`nulldlg.cpp:1337`).
+3. In that dialog the AI players gauge is forced to at least 1 (`nulldlg.cpp:1694`). OK starts the game (`nulldlg.cpp:2124-2141`).
+
+#### Blockers and risks
+
+| # | Item | Evidence | Workaround or fix | Size |
+|---|---|---|---|---|
+| 1 | Skirmish music might start silent. Predicted from the code, not seen in the owner's play test; cause of the difference not investigated (see "Owner's play test"). | Read from code: when a skirmish starts, `Options.ScoreVolume = Options.MultiScoreVolume` (`init.cpp:892`). `MultiScoreVolume` defaults to "0" (`redalert/options.cpp:94`, read at `:573`), and the INI has `MultiplayerScoreVolume=0`. Observed: the owner heard music without touching the slider. | If music is silent: raise the Music slider in the in-game sound controls, which saves the value; or set `MultiplayerScoreVolume` in the INI. Not a code blocker. | None (setting) |
+| 2 | Logo movie at every native launch. | See Movies. | None needed: Esc skips it. Movies are already skipped in the web build. | None |
+| 3 | The game rewrites the whole INI when options are saved. | `session.cpp:640-656`, `options.cpp:735`. | `DataPath` has survived this before, and the backup exists. | None |
+
+Note for step 3: the web build's generated INI will have the same default (`MultiplayerScoreVolume` not set, so 0). From the code this predicts silent skirmish music there too, but the same prediction was not borne out in the owner's native play test, and the cause of the difference has not been investigated. The step 3 worker has been told. Check whether music plays in the browser rather than assume either way.
+
+#### Things to know
+
+- **The INI uses Windows line endings (CRLF),** so each line ends in an invisible `\r` before the newline. A `sed` pattern ending in `demo$` matched nothing; the pattern has to allow for the `\r`, as in the command above.
+
+#### Owner's play test
+
+Native build `./build/vanillara`, full Allied data in `~/ra-data/skirmish-full`, 13 Nov 2026. The owner followed a play-test script: Esc past the logo movie; Multiplayer Game, Skirmish; check the map list; start a skirmish against one AI; raise the Music slider; play 5 minutes; quit and check the exit code.
+
+The owner's report, verbatim: "Play test completed with zero errors - launch video was still included which is expected to cause hangs if kept on browser version".
+
+The owner's second report, answering follow-up questions, verbatim: "Skrimish map looked complete - large list of maps. Sound effects all worked as expected, music was playing without manual intervention game exited cleanly by following usual route (menu - exit)".
+
+The table records only what was reported.
+
+| Check | Result |
+|---|---|
+| Logo movie at launch | Played (observed by the owner), as step 1 predicted from the code |
+| Skirmish map list shows maps | Yes, "large list of maps". The exact count was not reported (24 expected) |
+| Skirmish against one AI starts | Not reported separately; covered by the first report ("completed with zero errors") |
+| Plays for 5 minutes | Not reported separately; covered by the first report ("completed with zero errors") |
+| Sound | Yes, sound effects "all worked as expected" |
+| Music | Yes, without raising the Music slider |
+| No crash | Yes |
+| Exit | Clean, through the menu's exit. The exit code number was not reported |
+
+Result: step 1 acceptance is met, as reported by the owner.
+
+**Discrepancy: music played, although step 1 predicted silence.** Step 1 predicted from the code that skirmish music starts silent: `MultiplayerScoreVolume=0` in the INI, copied to `ScoreVolume` when a skirmish starts (`init.cpp:892`; see "Blockers and risks", row 1). The owner heard music without touching the slider. Checked after the play test (observed): the game rewrote `redalert.ini` at 00:44 on 13 Nov (1247 bytes before, 1545 after), and it still has `ScoreVolume=0.25` and `MultiplayerScoreVolume=0`, with `DataPath` unchanged. So the prediction from the code was not borne out. The reason is not known; it has not been investigated.
+
+Update from step 3: in the browser the setting does matter. Observed: with `MultiplayerScoreVolume=0.00` there was no in-game music stream; with `0.25` there was (see step 3, "Source changes"). The native difference is still unexplained. One candidate explanation, **a guess that has not been checked**: `Main_Menu` raises a zero music volume to 0.4 for the menu and restores it on exit (`redalert/menus.cpp:690-693`, `:959`), and the menu track (`INTRO.AUD`) is in `LOCAL.MIX`, so music at the menu plays regardless of the setting. If so, the owner may have heard menu music and not skirmish music. Whether the owner's music was in the skirmish itself has been asked.
+
+**The owner's concern about the launch video, for step 3.** The logo movie will not play or hang in the browser:
+
+- The web build already skips every movie. `Play_Movie` returns at once in web builds (session 3, C++ change 2; the `__EMSCRIPTEN__` branch at `redalert/conquer.cpp:2369-2374`). The logo movie goes through `Play_Movie` too (`Play_Intro`, `init.cpp:1230`).
+- The trimmed skirmish data set from step 2 does not contain the movie archive (`movies1.mix`) at all.
+- Bringing movies back in the browser would need the two yields described in session 3, "The hang".
+
+### Step 2: data size
+
+Question: what is the smallest set of data files a skirmish needs? Investigation only; no repo files changed.
+
+**Result: a trimmed pair of archives of 17,711,278 bytes (16.9 MiB), against 479.7 MB for the full Allied disc pair, reaches the main menu natively. No skirmish has been played with it yet.** Adding all the music brings it to 81,882,638 bytes (78.1 MiB).
+
+#### Tool: vanillamix
+
+`vanillamix` is the project's own MIX archive tool (`tools/mixtool/`). It was built in `build-tools/`, which is ignored by git (the `/build*` rule, confirmed with `git check-ignore -v build-tools/x`).
+
+```sh
+# Configure and build only the tools: no games, no tests. 0 errors, 0 compiler warnings.
+cmake -B build-tools -DBUILD_TOOLS=ON -DBUILD_VANILLATD=OFF -DBUILD_VANILLARA=OFF -DBUILD_TESTS=OFF . && cmake --build build-tools -j8
+```
+
+Later the same folder was reconfigured with `-DBUILD_VANILLARA=ON`, to get a private copy of the game (`build-tools/vanillara`) for smoke tests without touching `build/`. 0 errors, the same 3 known warnings.
+
+Usage:
+
+- `vanillamix -l <mix>` lists an archive.
+- `vanillamix -x -d <dir> <mix>` unpacks it into a folder.
+- `vanillamix -c -d <dir> <out.mix>` packs a folder into a new archive. The result is plain (not encrypted). The tool lowercases the output name, so results were renamed to upper case.
+
+MIX archives store a number computed from each file name (a hash), not the name itself. The tool has a built-in list of known names (`tools/mixtool/mixnamedb_data.cpp`); an entry it cannot name is shown as its hash.
+
+#### What is inside the two archives
+
+Observed with `vanillamix -l`. MiB is 1,048,576 bytes.
+
+`MAIN.MIX`, 454,605,294 bytes (entries total 454,605,058, plus a 236-byte encrypted header; exact):
+
+| Inner archive | Bytes | MiB |
+|---|---|---|
+| `movies1.mix` | 369,362,336 | 352.25 |
+| `scores.mix` | 64,171,360 | 61.20 |
+| `general.mix` | 14,932,344 | 14.24 |
+| `conquer.mix` | 2,177,047 | 2.08 |
+| `temperat.mix` | 1,038,859 | 0.99 |
+| `snow.mix` | 1,030,861 | 0.98 |
+| `sounds.mix` | 1,006,778 | 0.96 |
+| `allies.mix` | 309,406 | 0.30 |
+| `russian.mix` | 266,077 | 0.25 |
+| `interior.mix` | 247,425 | 0.24 |
+| `edhi.mix` | 54,335 | 0.05 |
+| `edlo.mix` | 8,230 | 0.01 |
+
+`REDALERT.MIX`, 25,046,328 bytes (entries total 25,046,164, plus a 164-byte header; exact):
+
+| Inner archive | Bytes | MiB |
+|---|---|---|
+| `nchires.mix` | 11,990,198 | 11.43 |
+| `hires.mix` | 5,817,417 | 5.55 |
+| `local.mix` | 3,829,837 | 3.65 |
+| `speech.mix` | 2,003,464 | 1.91 |
+| `lores.mix` | 754,800 | 0.72 |
+| `editor.mix` | 650,448 | 0.62 |
+
+Entries the tool could not name: one in `movies1.mix` (hash `18FF53F1`, 20.3 MB, almost certainly a movie), and hash `27FF53F1` listed twice in `nchires.mix` (1.6 MB each). None of them is in the trimmed set.
+
+#### Which archives a skirmish needs
+
+Contents are observed from the listings. Start-up behaviour and skirmish use are read from code. "Registered" means the game adds the archive to its search list; "cached" means it also loads the whole archive into memory at start-up. Note: `assert` is compiled out in this build type, so the `assert(ok)` after each cache call does not stop the game when an archive is missing.
+
+| Archive | Contents | At start-up (read from code) | Skirmish |
+|---|---|---|---|
+| `local.mix` | `rules.ini`, palettes, fonts, text strings, `intro.aud` | Registered and cached (`redalert/init.cpp:2307-2309`) | Required |
+| `hires.mix` | Sidebar and interface art, `TITLE.PCX`, fonts | Cached when `RESFACTOR` is not 1, the default (`init.cpp:2311-2314`) | Yes |
+| `lores.mix` | Low-resolution versions of the above | Only when `RESFACTOR` is 1, i.e. `[Video] DOSMode=yes` (`init.cpp:2317-2320`, `redalert/startup.cpp:332`) | No, with default settings |
+| `nchires.mix` | 106 movie palettes (`.vqp`), `english.vqa`, 2 unnamed | Registered, not cached (`init.cpp:2316`) | No. The palettes are used only by `Play_Movie` (`Load_Interpolated_Palettes`, `redalert/conquer.cpp:2259`) |
+| `speech.mix` | EVA voice lines (the announcer) | Registered (`init.cpp:2373`) | Optional. Speech playback checks `Is_Available` and stays silent if the file is missing (`redalert/audio.cpp:740-741`, in `Speak_AI`) |
+| `editor.mix`, `edhi.mix`, `edlo.mix` | Map editor art | Not referenced by the Red Alert game code | No |
+| `conquer.mix` | Unit and building art, score-screen art | Registered (`init.cpp:2349`), cached (`init.cpp:2662`) | Yes |
+| `general.mix` | `MISSIONS.PKT`, the 24 `SCM*.INI` skirmish maps, campaign scenario files, `MISSION.INI`, `TUTORIAL.INI`. 12.5 MB of it is campaign map-selection animations (`redalert/mapsel.cpp:116`), the rest low-resolution credits slides (`redalert/egos.cpp:95`) | Registered (`init.cpp:2353`) | Yes, but only `MISSIONS.PKT` and the SCM files (`redalert/session.cpp:756`), plus `MISSION.INI`, read on every scenario load (`redalert/scenario.cpp:2427`), and `TUTORIAL.INI`, read at start-up (`init.cpp:2674`) |
+| `temperat.mix`, `snow.mix` | Terrain tiles | Loaded when a map needs that theatre (map climate) (`redalert/display.cpp:371-380`) | Yes. Observed: 11 skirmish maps are temperate, 13 snow, none interior |
+| `interior.mix` | Interior tiles | As above | No |
+| `sounds.mix` | Sound effects | Registered, and cached when sound is on (`init.cpp:2374`, `:2664`) | Yes for sound. A missing sound just does not play (`audio.cpp:483-490`) |
+| `allies.mix`, `russian.mix` | Unit voice replies | Registered, and cached when sound is on (`init.cpp:2375-2376`, `:2665-2666`) | Yes for unit voices; optional |
+| `scores.mix` | 21 music tracks | Registered (`init.cpp:2366`). Each track's availability is checked separately (`redalert/theme.cpp:578`), and missing tracks are never chosen (`theme.cpp:480`) | Optional (music) |
+| `movies1.mix` | 51 movies plus 1 unnamed | `MOVIES1` if present, else `MOVIES2`; a missing file gives an empty archive object (`init.cpp:2355-2359`, `common/mixfile.h:277`) | No |
+
+Method limit: file names quoted in `redalert/*.cpp` were matched against the archive listings. Everything that exists only in the dropped archives is campaign, credits, movie-palette or DOS-mode material. Names the game builds at run time (with `sprintf`) would not show up in that check.
+
+#### Answers
+
+1. **Movies are not needed for a skirmish** (read from code). `Play_Movie` returns at once when `Session.Type != GAME_NORMAL`, i.e. in any non-campaign game (`conquer.cpp:2392`). It also skips a movie whose `.VQA` is missing (`conquer.cpp:2408`), and the web build skips all movies (`conquer.cpp:2369`). A missing `MOVIES1.MIX` is handled at `init.cpp:2355-2359`. Observed support: the demo data has no `movies1.mix` and already plays a mission. This sharpens step 1's movie note: step 1 found that no skirmish map names a movie; this shows a skirmish would not play one anyway.
+2. **The map list needs `general.mix`**, or loose copies of `MISSIONS.PKT` and the SCM files. Without them the list is empty.
+3. **A smaller set is possible with no source changes.** Two routes:
+   - (b) Rebuild smaller `MAIN.MIX` and `REDALERT.MIX` with `vanillamix`. Supported by the code and the tool: the game reads plain unencrypted archives (`common/mixfile.h:419-430`). The candidate below uses this route.
+   - (a) Put the inner archives loose in the data folder. Read from code: `CCFileClass::Open` tries a loose file on disk before looking inside archives (`common/ccfile.cpp:424-425`), and each inner archive is opened by name (`init.cpp:2349-2376`). The catch, read from code and not tested: with no file named `MAIN.MIX` at all, starting a skirmish should fail. A skirmish uses `RequiredCD = -1` (`scenario.cpp:2072-2073`), and `Read_Scenario_INI` exits if `Force_CD_Available` returns false (`scenario.cpp:2120-2124`). That returns true only if a `MAIN.MIX` can be found (`conquer.cpp:3728-3732`, `:3819-3825`) or the game is started with the `-CD.` argument (`init.cpp:1440`, `common/cdfile.h:92`). Mixing the routes works by the code: a small `MAIN.MIX` plus loose optional files such as `SCORES.MIX`.
+4. **Size variants:**
+
+| Variant | Bytes | What is lost |
+|---|---|---|
+| Candidate, without music | 17,711,278 (16.9 MiB) | Music, movies, campaign, interior maps, DOS low-resolution mode |
+| Candidate plus all music (`scores.mix`) | 81,882,638 (78.1 MiB) | Movies, campaign, interior maps, DOS mode |
+| Candidate without EVA speech | About 15.7 MB (2.0 MB less) | Announcements such as "construction complete". The step 2 worker advises keeping speech |
+| Candidate without unit voices | 0.56 MB less | Unit replies |
+| Full Allied disc pair, for scale | 479.7 MB | Nothing. Movies are 352 MiB of it, music 61 MiB |
+
+Read from code, not tested: a `SCORES.MIX` with only 2 to 4 tracks (about 3 MB each) should also work, because availability is checked per track.
+
+Updates from step 3:
+
+- **The "few tracks" idea is now tested and works in the browser** (observed): a `SCORES.MIX` of four tracks, 10,386,815 bytes (10.4 MB). See step 3, "Data set".
+- **The 17.7 MB no-music candidate works in the browser only with music volume 0.** With music volume above 0 and no in-game track available, the game hangs at skirmish start. See step 3, blocker 1.
+- **The menu has music even without `SCORES.MIX`**: the menu track is `INTRO.AUD`, which is in `LOCAL.MIX` (see the classification table).
+
+#### The candidate set
+
+All outside the repo. Both files exist with these sizes, and listing the new `MAIN.MIX` shows its seven inner archives.
+
+| File | Bytes | Inner archives |
+|---|---|---|
+| `~/ra-data/skirmish-min/MAIN.MIX` | 6,060,518 | `conquer`, `sounds`, `allies`, `russian`, `temperat`, `snow`, and a trimmed `general.mix` (231,400 bytes: `missions.pkt`, `mission.ini`, `tutorial.ini`, `scm01ea.ini` to `scm24ea.ini`) |
+| `~/ra-data/skirmish-min/REDALERT.MIX` | 11,650,760 | `local`, `hires`, `speech` |
+| `~/ra-data/skirmish-min-music/SCORES.MIX` (optional music) | 64,171,360 | A loose copy of `scores.mix` |
+
+How it was made: unpacked with `vanillamix -x` into `~/ra-data/allied-extract/` (472 MB), the chosen files staged in `~/ra-data/skirmish-min-build/` (18 MB), then packed with `vanillamix -c`.
+
+#### Smoke test of the candidate
+
+```sh
+# Run the private game copy for 20 seconds with its own per-user folder, so the owner's config is not touched.
+XDG_CONFIG_HOME=~/ra-data/smoke-min/config timeout 20 build-tools/vanillara
+```
+
+That folder's `vanilla-conquer/vanillara/REDALERT.INI` sets `DataPath=/home/mikem93/ra-data/skirmish-min`, `Windowed=yes` and `RawInput=no`. `XDG_CONFIG_HOME` is the standard Linux variable for where programs keep settings; the game uses it for its per-user folder (`Get_Posix_Default`, `common/paths_posix.cpp:91`, used at `:203`).
+
+Observed:
+
+- Exit code 124 in each of three runs (without and with a loose `SCORES.MIX`). The log has only the PipeWire notice, no missing-file messages.
+- The game was seen reading only the two `skirmish-min` files.
+- A baseline run on the full data gave the same result.
+
+Limits: this shows only that the game reaches its menu. No skirmish was started with the trimmed set. It also does not show that a loose `SCORES.MIX` is used: the music file was never seen opened, but the full data did not open its music at the menu within 20 seconds either.
+
+#### Risks and unknowns
+
+| # | Item | Evidence | If it goes wrong | Size |
+|---|---|---|---|---|
+| 1 | A skirmish has not been played with the trimmed set. Files loaded by names built at run time could be missing. | Judged low risk: the demo already plays a mission with a `conquer.mix` of the same size (2,177,047 bytes). | Add the missing file to the set. | Small |
+| 2 | Route (a) (no `MAIN.MIX`, `-CD.` argument) | Read from code only. | Use route (b), which is the candidate. | None for the candidate |
+| 3 | The rebuilt archives are unencrypted and differ in size from the originals. | Accepted natively (observed). Not yet tested in the web build. | Unknown until step 3. | Not known |
+| 4 | Only the Allied disc was examined. | The Soviet disc's `general.mix` may differ. | Repeat the listing on the Soviet disc. | Small |
+
+#### Things to know
+
+- **`vanillamix` writes a file in the per-user config area.** It always calls `Paths.Init("vanillatools")` (`tools/mixtool/makemix.cpp:553`), and so created `~/.config/vanilla-conquer/vanillatools/filenames.db` (1.1 MB). It is not game data and does not affect the game's own `vanillara/` config folder. To avoid it, run the tool with `XDG_CONFIG_HOME` set to a scratch folder. The file is still there; the owner decides whether to remove it.
+- **Leftovers outside the repo:** `~/ra-data/allied-extract` (472 MB), `~/ra-data/skirmish-min-build`, `~/ra-data/smoke-min`, `~/ra-data/smoke-full`, and the `vanillatools` config folder above. Inside the repo: `build-tools/` (ignored by git).
+
+### Step 3: skirmish in the browser
+
+**Result: a skirmish against one AI runs in headless Edge 156 with a 28.1 MB data set that includes music. No hang or crash in about 7.5 minutes of active play, and the game pauses on a simulated tab switch and resumes. One tracked file changed (CMake, one line); no C++ changes. One hang was found, only when no in-game music track is available and music volume is above 0. It is not web-specific and is not fixed (blocker 1).**
+
+All input was simulated by script, and nobody watched or listened live.
+
+#### Data set
+
+`~/ra-data/skirmish-web/`, outside the repo:
+
+| File | Bytes | What |
+|---|---|---|
+| `MAIN.MIX` | 6,060,518 | Symbolic link to `../skirmish-min/MAIN.MIX` (step 2 candidate) |
+| `REDALERT.MIX` | 11,650,760 | Symbolic link to `../skirmish-min/REDALERT.MIX` (step 2 candidate) |
+| `SCORES.MIX` | 10,386,815 | New: packed with `vanillamix -c` from four tracks, `vector1a`, `snake`, `smsh226m` and `score` (`.aud`), with `XDG_CONFIG_HOME` pointed at a scratch folder |
+
+`build-web/vanillara.data` is 28,098,196 bytes: the three files (28,098,093) plus the 103-byte generated INI. Emscripten's file packager follows symbolic links (observed: the `.data` size matches the real file sizes exactly; read from the packager: it walks the folder with `os.walk` and reads with `open()`).
+
+Why these tracks (read from `RULES.INI [ThemeControl]` and from code):
+
+- HELL226M, AWAIT, MUD1A, SNAKE, VECTOR1A and SMSH226M are allowed for every side; the rest are Allies-only or Soviet-only.
+- `ThemeClass::Is_Allowed` always applies the side limit (`redalert/theme.cpp:494`); the scenario-number limit applies only to campaign play (`theme.cpp:501`).
+- Three every-side tracks were taken because shuffle mode needs at least two allowed tracks (`theme.cpp:244-246`: it never picks the track that just played), plus `score.aud` for the end screen. No track is required by name.
+- AWAIT can never play: the freeware file is named `await_r.aud`.
+
+Smallest set seen working in the browser: with in-game music, this 28.1 MB set. Without in-game music, the 17.7 MB `skirmish-min`, but only with music volume 0 (blocker 1); it still has menu music.
+
+#### Source changes
+
+Every change to a tracked file for the web build in this ticket. Checked with `git diff CMakeLists.txt`: 1 line added, 1 removed. No C++ source was changed.
+
+| # | File | Change | Reason |
+|---|---|---|---|
+| 1 | `CMakeLists.txt`, inside `if(EMSCRIPTEN)` / `if(WEB_DATA_DIR)` | The generated `REDALERT.INI` gains an `[Options]` section with `MultiplayerScoreVolume=0.25`, matching the `ScoreVolume=0.25` the game writes. | At skirmish start `Options.ScoreVolume = Options.MultiScoreVolume` (`redalert/init.cpp:892`), whose default is 0. Observed necessary in the browser: run m1 with `MultiplayerScoreVolume=0.00` had no in-game music stream. |
+
+The native build still compiles after the change: `cmake --build build -j8`, exit 0, 0 errors.
+
+#### Commands
+
+```sh
+# Put emcc and emcmake on the PATH for this shell.
+source ~/emsdk/emsdk_env.sh
+
+# Configure, packaging the skirmish-web data (local testing only).
+emcmake cmake -S . -B build-web -DBUILD_VANILLATD=OFF "-DVC_CXX_FLAGS=-w;-ferror-limit=0" -DWEB_DATA_DIR=$HOME/ra-data/skirmish-web
+
+# Build Red Alert only.
+cmake --build build-web --target VanillaRA -j8
+```
+
+Build result: 0 errors, 1 warning (the usual notice that optimisation is limited because debug info was requested).
+
+| File | Bytes |
+|---|---|
+| `vanillara.wasm` | 14,291,949 |
+| `vanillara.js` | 454,672 |
+| `vanillara.html` | 21,964 |
+| `vanillara.data` | 28,098,196 |
+
+`git check-ignore -v` shows the `/build*` rule covering the `.data`, the generated INI and the probe tools. As before, **`build-web/` must never be committed, uploaded or deployed while `vanillara.data` is in it.**
+
+#### Acceptance results (headless Edge 156, main run "b1")
+
+| Check | Result |
+|---|---|
+| Map list shows maps | Observed. Picture `b1-shot-dialog.png`: the Scenarios list shows 11 names with a scroll bar, "A Path Beyond (Lg)" selected; side Russia, AI Players 1, Credits 10000, Bases ticked. |
+| Skirmish against 1 AI starts | Observed. In game within 2 seconds of OK (`b1-shot-ok2s.png`): map with the start area revealed, MCV, tanks, infantry, credits counting up to 10000. |
+| Runs 5 minutes | Observed. In game from t=34 s to t=545 s; minus 69 s of pauses, about 440 s of active play. Scripted actions worked: MCV deployed into a Construction Yard, a tank moved to the clicked spot twice, Power Plant built and placed, Ore Refinery started (credits 10000, 9730, 9621). `b1-shot-final.png`: Construction Yard, Power Plant, units, credits 9621, Ore Refinery in production in the sidebar. |
+| No crash or hang | Observed. No stderr, abort, JavaScript error or watchdog entry. 1049 heartbeats; largest gap 673 ms (start-up), 523 ms at skirmish load. |
+| Tab switch pauses and resumes | Observed, simulated. Page hidden and blurred by script for 15 s. Credits stood at 9975 before and while hidden; within 5 s of restore the rest of the Power Plant's cost was spent and it showed READY (`b1-shot-focus-after2.png`: credits 9730, Power Plant READY). Music stopped while hidden and came back. |
+| Sound effects and music | Observed as signal only (method below). Not verified: that a person hears it, which track plays, audio in a normal window. |
+
+An unplanned real focus loss: at t=59.8 s headless Edge itself fired a blur and `visibility=hidden` (cause not known). The game paused correctly; a simulated show and focus at t=114 s resumed it fully.
+
+Audio method: a hook on the Web Audio layer (the browser's sound system). Each OpenAL source has its own gain node (volume control), and every 5 s the probe recorded buffers started, seconds of audio and peak level per source.
+
+- Music: after restore, 64 of 72 five-second windows show one source streaming continuously (5.02 s of audio per 5 s, peak 0.6 to 0.9, gain 0.249, matching volume 0.25).
+- Sound effects and speech: short bursts on other sources at gains 0.198 and 0.397.
+
+#### Blocker 1: endless loop when no in-game music is available
+
+| | |
+|---|---|
+| Where | `redalert/theme.cpp:254-258`, the sequential loop in `Next_Song` (the shuffle loop is `:244-246`). Both repeat until `Is_Allowed` is true. Reached from `Theme.AI` (`theme.cpp:197-203`) after `Main_Loop` queues `THEME_PICK_ANOTHER` (`redalert/conquer.cpp:1762-1763`). `ScoresPresent = true` is set unconditionally (`init.cpp:2365`). |
+| Kind | A loop that never ends and never yields (hands control back to the browser), when music volume is above 0 and no in-game track is available. Not web-specific: read from code, a native game would freeze the same way. |
+| How found | Observed: run n1 (17.7 MB set, volume 0.25): the heartbeat stops right after OK, with no watchdog stack, because the loop never calls into JavaScript. Run n2 (same set, volume 0.00) plays normally. The location comes from code reading plus that difference, not from a stack trace. |
+| Likely fix | Return `THEME_NONE` from `Next_Song` when no theme is allowed. Not done: it is not web-only, and it does not affect the accepted set. |
+| Size | Small |
+
+Consequence: **any data set shipped without in-game music must either set music volume to 0 or wait for this fix.**
+
+#### Performance and memory
+
+Headless Edge 156, served from localhost, an `-O2 -g` build. These are not real-network or real-window numbers.
+
+Load time, measured from the page request. "Menu drawn" is the last change of the canvas image, confirmed by a picture at 4 s.
+
+| Run | Files downloaded | `main()` starts | First pixels | Menu drawn |
+|---|---|---|---|---|
+| Cold (fresh profile), 3 runs | 0.59 to 0.68 s | 0.47 to 0.70 s | 1.09 to 1.20 s | 1.69 to 1.78 s |
+| Warm (cached), 2 runs | 0.27 to 0.32 s | 0.30 to 0.34 s | 0.54 to 0.57 s | 1.22 s |
+| No-music set, cold, 2 runs | 0.36 s | 0.37 s | 1.09 to 1.11 s | 1.54 to 1.56 s |
+
+In the warm runs the `.data` and `.wasm` came from the browser cache (no server requests for them). On localhost the music costs about 0.1 to 0.2 s; over a real network the cost is the extra 10.4 MB of download.
+
+Memory: the WebAssembly memory size (the game's own heap), and Chromium's `performance.memory` for the JavaScript heap.
+
+| | With music (28.1 MB set) | Without music (17.7 MB set) |
+|---|---|---|
+| Wasm heap before `main()` | 26,148,864 bytes | Same |
+| Wasm heap at main menu, skirmish start, and after 5+ minutes | 51,445,760 bytes (no growth) | Same |
+| JavaScript heap used before `main()` | 58.6 MB | 37.6 MB |
+| JavaScript heap used during the game | 32 to 37 MB | 21 to 23 MB |
+
+Inferred, not confirmed: the packaged data is not in the wasm heap, since that is the same with and without music. It sits on the JavaScript side (the in-memory file system); the 12 to 13 MB difference between the two sets tracks the 10.4 MB `SCORES.MIX`. How much of the wasm heap is MIX data the game caches could not be separated.
+
+Smoothness (observed):
+
+- Screen updates (one texture upload plus draw per SDL present), counted in 5 s windows in game: median 116 per second, minimum 83, about 114 at the menu. This is how often the screen is drawn, not the game-logic rate, which was not measured. Headless Edge has no real display refresh.
+- Heartbeat every 500 ms: worst gap 673 ms at start-up, 523 ms at skirmish load, nothing else over 521 ms in 9 minutes.
+
+#### Probe tools
+
+In `build-web/probe-tools/` (ignored by git, lost if `build-web/` is deleted):
+
+- `probe2.html`: everything the session 3 probe did, plus:
+  - input steps `click@X@Y`, `rclick@X@Y`, `move@X@Y` (640x400 canvas pixels) and `key@NAME`;
+  - load-timing marks, and a screen-change log for the first 40 s (`scrsecs=`);
+  - memory every 10 s, and per-source audio summaries and screen updates per second every 5 s;
+  - a live command queue.
+- `probe_server.py`, extended:
+  - `GET /cmd?run=X` hands the page any lines appended to `<outdir>/cmd-X.txt`, so a live page can be driven from the shell, for example `echo click@320@239 >> <outdir>/cmd-b1.txt`;
+  - `PROBE_LOG=1` saves the request log;
+  - `PROBE_CACHE=1` lets the browser cache files, for warm-load runs.
+- `edge.sh <name> <secs> <url>` starts headless Edge with the profile `vc-probe-<name>`. `edge-kill.ps1` stops only Edge processes whose command line contains `vc-probe` (run it with `powershell.exe -ExecutionPolicy Bypass -File`).
+- Menu click spots: Multiplayer Game (320,239), Skirmish (320,231), dialog OK (105,368).
+- Pictures and logs: `build-web/probe-tools/results-4a/`, with folders `main-b1/`, `musicvol0-m1/`, `nomusic-n1-n2/`, `warm-w1-w3/`.
+
+#### State left
+
+- `~/ra-data/skirmish-web/` created.
+- `build-web/` holds the accepted build, including the packaged data.
+- No test server and no `vc-probe` Edge process left running (nothing listening on ports 8000 to 8009; Edge count 0). Port 8000 was not touched, and no server is running there now, so the owner starts one with the session 3 command.
+- `~/.config/vanilla-conquer/` not touched.
+
+#### Not checked in step 3
+
+- A normal (non-headless) window; audio by ear; which track plays.
+- The game-logic frame rate.
+- The Allied side (the run played Russia).
+- The end-of-game score screen.
+- Fighting the AI: the AI did not appear on screen in 7.5 minutes.
+- The cause of headless Edge's own hide at 60 s.
+- Why native music played with `MultiplayerScoreVolume=0` (see step 1).
+- The full 480 MB data in the browser. Not run, because nothing pointed at the trim.
+- A `.wasm` size difference between a scratch build (14,117,162 bytes) and `build-web` (14,291,949 bytes). Not investigated.
+
+#### Owner's browser play test
+
+The step 3 build in `build-web/` (`vanillara.wasm` 14,291,949 bytes, `-O2 -g`, data from `~/ra-data/skirmish-web`), in a normal Edge window. Side: Soviet (Russia). Map: "Normandy", as the owner names it (the exact entry in the map list has not been matched). Players: the owner plus 2 AI players.
+
+The owner's report, verbatim: "test ran perfectly for 10minutes plus then crashed and froze" and "refresh returns game to menu".
+
+The owner's answer to follow-up questions about the crash, verbatim: "Edge, Soviet (Russia) Normandy - Units were moving, previously combat and movement had been heavy with no issues, 2 AI + player On screen were four mammoth tanks no notable browser behabior beyond the crash".
+
+Console output pasted by the owner, verbatim:
+
+```
+Uncaught (in promise) RuntimeError: function signature mismatch
+    at vanillara.wasm.DriveClass::Start_Of_Move() (vanillara.wasm:0x8ab9c)
+    at vanillara.wasm.DriveClass::AI() (vanillara.wasm:0x8be38)
+    at vanillara.wasm.UnitClass::AI() (vanillara.wasm:0x186ce6)
+    at vanillara.wasm.LogicClass::AI() (vanillara.wasm:0xf363f)
+    at vanillara.wasm.Main_Loop() (vanillara.wasm:0x6dd37)
+    at vanillara.wasm.Main_Game(int, char**) (vanillara.wasm:0x6cdb3)
+    at vanillara.wasm.main (vanillara.wasm:0x156839)
+    at wrapper (vanillara.js:4754:20)
+    at callUserCallback (vanillara.js:4726:16)
+    at Object.doRewind (vanillara.js:4858:16)
+```
+
+The table records only what was reported.
+
+| Check | Result |
+|---|---|
+| Skirmish map list shows maps | Not reported separately; covered by "ran perfectly" for the first 10 minutes |
+| Skirmish against one AI starts | Not reported separately; covered by "ran perfectly" for the first 10 minutes |
+| Plays for 5 minutes | Yes ("ran perfectly for 10minutes plus") |
+| Sound | Not reported separately; covered by "ran perfectly" for the first 10 minutes |
+| Music | Not reported separately; covered by "ran perfectly" for the first 10 minutes |
+| No crash | **No**: a crash after 10+ minutes, see blocker 2 |
+| Tab switch pauses and resumes | Not reported separately; covered by "ran perfectly" for the first 10 minutes |
+| Console | The crash message above; nothing else reported |
+
+#### Blocker 2: crash in unit movement after 10+ minutes
+
+| | |
+|---|---|
+| Seen | Owner's browser play test, step 3 build, after 10+ minutes of a skirmish. The game froze; a refresh returns to the menu. Console message above. |
+| What the message means | WebAssembly checks the type of a function every time code calls one through a pointer or a virtual function table (an "indirect call"). "function signature mismatch" means such a call, inside `DriveClass::Start_Of_Move` (unit movement, `redalert/drive.cpp`), reached a function of a different type from the one expected, and the browser stopped the program. |
+| At the time of the crash | Reported by the owner: units were moving; four Mammoth Tanks were on screen; combat and movement had been heavy earlier in the game with no problem; no other unusual browser behaviour. It is not known whether the Mammoth Tanks were the units that triggered it, or whose they were. |
+| Why it froze | The stop ends the game's code, so the page keeps showing the last picture. A refresh starts the program again. |
+| Mapping (observed) | `emsymbolizer` (from `~/emsdk`, turns wasm addresses into source lines) on a copy of the crashed `vanillara.wasm`; `llvm-symbolizer` gives the same lines. `0x8ab9c` is `redalert/drive.cpp:1261`, the `Set_Speed(0);` inside `if (!Start_Driver(dest)) {` in `DriveClass::Start_Of_Move`. `0x8be38` is `drive.cpp:1390`, where `DriveClass::AI` calls `Start_Of_Move()`; the caller checks `IsActive` only after that call, at `:1391`. Further down: `unit.cpp:394`, `logic.cpp:351`. |
+| In the wasm (observed) | With `llvm-objdump -d` (disassembler): the trapping instruction is an indirect call of type `(i32,i32)->()` through the unit's own virtual table, slot 144, `FootClass::Set_Speed`. The earlier virtual call in the same function, `Start_Driver` (slot 139), worked. After a unit's destructors run, its table pointer is left at the `TechnoClass` table, which has no slot 144; the word read there is a function of type `(i32,i32)->(i32)`, which is exactly a signature mismatch. |
+| Read from code | `UnitClass::Start_Driver` goes down to `FootClass::Start_Driver`, which calls `Map[headto].Goodie_Check(this)` (picking up a crate). An Explosion or Napalm crate calls `Take_Damage` on the unit; if that kills it, `UnitClass::Take_Damage` deletes the unit. `Start_Driver` then returns false (`unit.cpp:3532` has the comment "IsActive can be cleared by Start_Driver"), and `Start_Of_Move` goes on to call `Set_Speed(0)` on the deleted unit. This is a use-after-delete (using an object after it has been freed) in shared game code. It is not web-specific and not caused by the trimmed data: native and full-data builds have the same bug; native happens not to trap. |
+| Hypothesis, not confirmed | A damaged unit (possibly one of the Mammoth Tanks) drove onto an Explosion or Napalm crate and died. The crash has not been reproduced. |
+| Proposed fix, not applied | In `redalert/drive.cpp` at 1258, inside `if (!Start_Driver(dest)) {`, add `if (!IsActive) return (false);` before `TrackNumber = -1;` (2 lines). Shared code, so the owner decides. `tiberiandawn/drive.cpp` probably needs the same; not checked. |
+| Workaround for now | Untick Crates in the skirmish dialog. |
+| Coverage so far | Step 3's headless run (about 7.5 minutes of active play) did not hit it. That run differed in two ways that may or may not matter: 1 AI player instead of 2, and a different map ("A Path Beyond (Lg)"). The owner's native play test was about 5 minutes; the native build has not been played for 10 minutes or more. |
+| Status | Diagnosed from the crashed build, not reproduced, not fixed |
+| Size | Small |
+
+### Correction to the session 4 hand-off
+
+The session 4 hand-off lists five files as changed and not committed: `CLAUDE.md`, `CMakeLists.txt`, `SPIKE.md`, `common/mssleep.h`, `common/wwstd.h`. All five are now committed:
+
+| File | Commit |
+|---|---|
+| `CMakeLists.txt`, `common/mssleep.h`, `common/wwstd.h` | `9952c95` ("Web Build: Asyncify waits, proper srtupt fix, local test data option") |
+| `CLAUDE.md`, `SPIKE.md` | `3770745` ("Notes:session 3 results and game data decision"), the next commit |
+
+Checked with `git show --stat --oneline 9952c95` and `git show --stat --oneline 3770745` (each lists exactly those files), and `git log --oneline -3 -- <file>` for each of the five. `3770745` includes the session 4 notes themselves, hand-off included. `git status --short` was empty at the start of session 4a, and `git diff 3770745` shows no difference in any of the five files.
+
+### Blockers, all steps
+
+Nothing blocked steps 1 or 2.
+
+| # | Step | Blocker | Status | Size |
+|---|---|---|---|---|
+| 1 | 3 | `Next_Song` loops forever when music volume is above 0 and no in-game track is available (`redalert/theme.cpp:244-246`, `:254-258`). Not web-specific. | Not fixed. Avoided by shipping music tracks or setting music volume to 0. | Small |
+| 2 | 3 | Crash in unit movement after 10+ minutes in the owner's browser: "function signature mismatch" in `DriveClass::Start_Of_Move` (see step 3, blocker 2). Read from code: a unit killed by a crate while starting to move is used after it is deleted. Workaround: Crates off. | Diagnosed from the crashed build, not reproduced, not fixed | Small |
+
+Not blocking:
+
+| Item | Size |
+|---|---|
+| Movies are off in the web build (session 3). Not needed for a skirmish (step 2). | None for skirmish |
+| `vanillamix` writes into `~/.config/vanilla-conquer/vanillatools/` unless `XDG_CONFIG_HOME` is set. | None (usage) |
+| The trimmed set is untested for file names built at run time beyond what 7.5 minutes of play touched. | Small if it happens: add the file |
+
+### Open items
+
+1. Reproduce the crash and decide on the 2-line fix for blocker 2 (see the hand-off).
+2. Decide on the `Next_Song` fix (blocker 1). It changes shared, non-web code, so it is outside this ticket's scope.
+3. Owner re-tests the browser skirmish.
+4. Whether the owner's native music was heard in the skirmish itself or only at the menu (asked).
+5. Leftovers for the owner to remove or keep: `~/.config/vanilla-conquer/vanillatools/`, and the work folders `~/ra-data/allied-extract`, `~/ra-data/skirmish-min-build`, `~/ra-data/smoke-min` and `~/ra-data/smoke-full`.
+6. Nothing is committed: `CMakeLists.txt` and `SPIKE.md` are modified.
+
+### Hand-off (end of session 4a)
+
+State: two files changed and **not committed**: `CMakeLists.txt` (one web-only line, `MultiplayerScoreVolume=0.25` in the generated INI) and `SPIKE.md` (checked with `git status --short`). No test servers or `vc-probe` Edge processes are running. `build-web/` holds the exact build that crashed: do not rebuild it until the reproduction below no longer needs its addresses. Scratch copies of that `.wasm` and `.js`, the disassembly and small reader scripts are in `/tmp/claude-1000/-home-mikem93-dev-Vanilla-Conquer/f26f9b24-7aba-4407-9069-001a0eee74f0/scratchpad/crash-4a/`, which may not survive a restart.
+
+Results:
+
+| Step | Result |
+|---|---|
+| 1, native skirmish | Passed (owner's play test) |
+| 2, data size | Done (investigation) |
+| 3, browser skirmish | Not passed: crash after 10+ minutes (blocker 2). The ticket's 5-minute acceptance was otherwise met, in headless Edge and in the owner's window. |
+
+Owner's game config: `DataPath` in `~/.config/vanilla-conquer/vanillara/redalert.ini` points at `~/ra-data/skirmish-full`; the demo version is saved beside it as `redalert.ini.demo-backup`.
+
+To pick up, in order:
+
+1. Reproduce the crash in a separate build folder (`build-web-dbg/`), using a scratch copy of the source whose `Goodie_Check` always gives the Explosion crate with lethal damage. Run a 2-AI skirmish in headless Edge and expect the same trap.
+2. Owner decides on the 2-line fix in shared code (blocker 2). If approved: apply it, show the trap is gone, check `tiberiandawn/drive.cpp`, and check the native build compiles.
+3. Owner decides on the `Next_Song` fix (blocker 1).
+4. Owner re-tests the browser skirmish.
+5. The remaining open items: the native music question, the leftovers, and whether to commit.
