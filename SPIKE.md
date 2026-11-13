@@ -1272,3 +1272,178 @@ python3 -m http.server 8000 --bind 127.0.0.1 --directory build-web
 ```
 
 Then open http://localhost:8000/vanillara.html.
+
+## Session 6: Multiplayer discovery (13 Nov 2026)
+
+**Result: browser multiplayer looks feasible without touching the game's lockstep or lobby logic, by replacing one transport class with a WebSocket version and adding a small relay server with join codes. The existing UDP code compiles for the web but cannot work in a browser. Overall size medium to large, driven by making the lobby's blocking waits yield to the browser and by hidden-tab behaviour. Assume browser-only play for a first version. Nothing was run, so every conclusion is from reading.** (Conductor's synthesis.)
+
+Owner's ticket: "Multiplayer discovery (spike, investigate and report only)". Release priority: (1) hostable skirmish, (2) multiplayer, (3) campaigns. Goal: an evidence-based answer to "what would browser multiplayer take?".
+
+Scope kept: code and documentation read only; no tracked file changed apart from SPIKE.md; no experiment was run. The optional networking-on web build was skipped because SPIKE.md:167 already records that it compiles and links, and `build-web/CMakeCache.txt:263` shows `NETWORKING:BOOL=ON` [obs].
+
+Method: two read-only Opus workers (game side in `redalert/`; transport and server in `common/`, the local Emscripten SDK 7.0.0 in `~/emsdk`, 3 web searches), plus conductor spot checks of about ten code pointers (all matched).
+
+Evidence labels: [code] read from code, [obs] observed by running, [web] looked up on the web 13 Nov 2026, [bg] background knowledge not checked, [est] estimate.
+
+Terms used below:
+
+- Lockstep: every machine runs the same simulation; only player commands are sent, and no machine moves to the next frame until it has everyone's commands for it.
+- Relay: a server that just passes messages between players.
+- WebSocket: a browser's two-way connection to a server, running over TCP.
+- WebRTC: the browser's peer-to-peer connection system; its "data channels" can carry game packets.
+- TURN: a relay server WebRTC falls back to when two players cannot connect directly.
+- Asyncify: the Emscripten feature this build uses to pause the C++ code and hand control back to the browser, then resume it.
+- Head-of-line blocking: on TCP, one lost packet holds up every packet behind it until it is resent.
+
+### Q1 Structure
+
+- Files compiled only with NETWORKING on: `redalert/` ipxconn, ipxgconn, ipxmgr, netdlg, sendfile (`redalert/CMakeLists.txt:151-158`); `common/` connect.cpp, ipxaddr.cpp, wsproto.cpp, wspudp.cpp, with defines `WINSOCK_IPX` and `NETWORKING` (`common/CMakeLists.txt:158-163,209-210`). Always compiled: event.cpp, queue.cpp, session.cpp, nulldlg.cpp, rawolapi.cpp, wolstrng.cpp (`redalert/CMakeLists.txt:44,91,98,101,110,148`). [code]
+- Layers, top to bottom [code]:
+
+| Layer | Where |
+|---|---|
+| Lobby dialogs | `netdlg.cpp` |
+| Session data, `Create_Connections` | `session.cpp:297-315` |
+| Connection manager `IPXManagerClass` | `ipxmgr.h:150` |
+| Per-connection `IPXConnClass` (ACK/retry); `IPXGlobalConnClass` (broadcast channel) | `ipxconn.h:53`, `ipxgconn.h:107` |
+| Base classes | `common/` connect.h, combuf.h, connmgr.h |
+| Transport interface `WinsockInterfaceClass` (`Open_Socket`, `WriteTo`, `Broadcast`, `Read`, `Message_Handler`) | `common/wsproto.h:92-135` |
+| Implementation `UDPInterfaceClass` | `common/wspudp.h:44` |
+
+- Protocol [code]: despite the "IPX" names, traffic is UDP: `PacketTransport = new UDPInterfaceClass` (`redalert/init.cpp:903,954`).
+  - One IPv4 UDP socket (`wspudp.cpp:166`), `SO_BROADCAST` and sends to 255.255.255.255 (:175-180), non-blocking (:191).
+  - Every player is bound to the same fixed port 1234, `PlanetWestwoodPortNumber` (:197, `internet.cpp:24`); own addresses come from `getifaddrs` (:251).
+  - `select` with zero timeout, then `recvfrom`/`sendto` (:513-583). A peer is identified by its 4-byte IP alone (:552, :570).
+  - Packets at most 1024 bytes (`wsproto.h:184`). Windows-only parts: `WSAAsyncSelect` and a `gethostbyname` path (:213, :341-445).
+- Reachable game types [code]: the menu offers Skirmish or "Network" (`GAME_IPX`) only (`mplayer.cpp`, about lines 320 and 339, line numbers approximate). `GameType` still lists MODEM, NULL_MODEM, IPX, INTERNET (`session.h:123-129`), but INTERNET/Westwood Online needs `WOLAPI_INTEGRATION` (`init.cpp:887-944`), which no CMake file defines. The worker judged modem/serial/internet code dead (not fully checked for nulldlg).
+- Finding and joining: LAN broadcast only [code].
+  - Lobby packets `NET_QUERY_GAME`/`ANSWER_GAME`, `QUERY_PLAYER`/`ANSWER_PLAYER`, `QUERY_JOIN`, `CONFIRM_JOIN`, `REJECT_JOIN`, `GAME_OPTIONS`, `GO`, plus scenario transfer 1000-1004 (`session.h:202-221`).
+  - `Send_Global_Message(..., 0, NULL)` means broadcast (`ipxmgr.cpp:709`) and ends in `PacketTransport->Broadcast` (`ipxgconn.cpp:413`, `ipxconn.cpp:434`). Addresses are learnt from the sender of each packet (`netdlg.cpp:2758, 3237`).
+  - Join: `Request_To_Join` sends `QUERY_JOIN` with min/max version and a RULES.INI check value (`netdlg.cpp:2473-2493`). Host sends seed, settings and protocol in `GAME_OPTIONS` (`netdlg.cpp:3071-3087`; seed from `rand()`, :3722).
+  - Start: host sends `GO`, then waits in place for ACKs and READY replies with a 10 s timeout (`netdlg.cpp:4460-4513`); connections are then created (`init.cpp:1150`).
+  - There is no way to join by typing an address.
+- Where the network meets the game loop [code]: `Main_Loop` calls `Queue_AI` (`conquer.cpp:1855`), which calls `Queue_AI_Multiplayer` (`queue.cpp:377,554`). Each frame a game CRC is computed (`queue.cpp:624-625`); every `FrameSendRate` frames packets/FRAMEINFO are sent (:762-776). Defaults `MaxAhead=5`, `FrameSendRate=3` (`session.cpp:167-168`, `session.h:101`); the host recomputes MaxAhead from measured response time, minimum 2 (`netdlg.cpp:4449-4454`). Frames are held back in `Wait_For_Players` until `Can_Advance` (`queue.cpp:1222`); the game stalls while waiting.
+
+### Q2 Transport
+
+Can Emscripten's socket emulation carry the traffic as-is? **No.** [code, not run]
+
+- `setsockopt` always returns "option not supported" in a browser (`~/emsdk/upstream/emscripten/src/lib/libsyscall.js:465-471`), so the `SO_BROADCAST` call at `wspudp.cpp:175` makes `Open_Socket` fail before any packet is sent.
+- `bind` on a UDP socket tries to start a listening server; unsupported in a browser, error quietly dropped (`libsockfs.js:525-547, 583`).
+- `sendto` opens one WebSocket per destination, to `ws://<ip>:<port>` (`libsockfs.js:207-283`); a broadcast would try `ws://255.255.255.255:1234`. Each UDP socket first sends a 10-byte "port" message (:310-318), and the server must speak the binary WebSocket subprotocol (`settings.js:440`). `select` works through `poll` (:435-478).
+- `PROXY_POSIX_SOCKETS` forwards every socket call to a native bridge program (`tools/websocket_to_posix_proxy`); each call blocks on a futex wait (`websocket_to_posix_socket.c:158`) [code]; it needs threads, special server headers and the game off the main thread [bg]. Not suitable here.
+- Even with a relay, the emulation does not fit: players are addressed by IP on a fixed port and found by broadcast.
+
+Conclusion [code]: a browser-specific replacement of one class. Smallest seam: `WinsockInterfaceClass` (`common/wsproto.h:92-135`), polled at `wsproto.cpp:70`. Write a web transport class and create it instead of `UDPInterfaceClass` at `redalert/init.cpp:903,954`. Everything above it (ACK/retry, lobby, lockstep) stays as it is.
+
+| | WebSocket via relay | WebRTC data channels |
+|---|---|---|
+| Delivery | Runs over TCP, so head-of-line blocking; the game's own ACK/retry layer adds a second retry loop on top [bg] | Can be unordered and unreliable, close to UDP [bg] |
+| Path | All traffic through the relay [bg] | Peer to peer, but strict home routers need a TURN server [bg] |
+| Emscripten support | WebSocket API is built in | None built in: `SOCKET_WEBRTC` was removed (`ChangeLog.md:161`) [code]; third-party `datachannel-wasm`, compatible with libdatachannel [web: GitHub, paullouisageneau/datachannel-wasm] |
+| Server | Relay with rooms | Signalling server still needed, plus STUN/TURN. Cloudflare TURN: 1,000 GB a month free, then $0.05/GB; STUN free [web: developers.cloudflare.com, realtime/turn] |
+| Complexity | Small | Larger C++ side, more failure modes |
+
+Verdict: WebSocket relay first. A 2-8 player lockstep game sends small packets, so latency through a nearby relay should be acceptable, but this is not measured.
+
+### Q3 Server
+
+- Minimum: one relay with rooms and join codes. The host gets a code; friends open the page with `?join=CODE`. The relay gives each player a made-up IPv4 address and forwards `WriteTo` (to one player) and `Broadcast` (to everyone in the room), so the existing LAN lobby works inside a room as if it were a LAN. No separate lobby list is needed for a first version.
+- Size: roughly 150-250 lines of Node.js with the `ws` package [est].
+- Hosting: Cloudflare Durable Objects can hold WebSockets and charge per message, but Cloudflare's own pages disagree on whether the free plan includes them [web: developers.cloudflare.com, durable-objects pricing]. A small rented server (VPS) is the fallback; prices not checked.
+- A page served over https can only open secure WebSockets (`wss://`), so the relay needs a TLS certificate [bg].
+
+### Q4 Lockstep in a hidden or throttled tab
+
+What the code does when a player stops sending [code]:
+
+- `queue.cpp:565-573`: the reconnect dialog appears after 3 s (`FRAMESYNC_DLG_TIME`, 3*60 ticks at 60 per second); the player is treated as gone after `FRAMESYNC_TIMEOUT` (15*60 ticks; the worker reports this is applied twice, about 30 s). Both are multiplied by 6 for `GAME_INTERNET`, which is not reachable today.
+- `Handle_Timeout` drops the slowest peer (`queue.cpp:2230-2248`), `Destroy_Connection` turns that house into a computer player (`netdlg.cpp:514-521`), and the others carry on.
+- Everyone stalls while waiting. There is no rejoin.
+
+What the web build does today [obs, sessions 3 and 4a, single player]: the game pauses itself when the page is hidden or loses focus and resumes on return (SPIKE.md:831, :834); SDL focus events drive this (`common/wwkeyboard_sdl2.cpp:86-98`). Whether multiplayer mode pauses on focus loss: not checked.
+
+Browser behaviour [bg, not tested here]: hidden tabs have timers slowed to about once a second (and, after some minutes, as little as once a minute in Chromium browsers) and get no animation frames; WebSocket messages still arrive; Web Workers are not slowed the same way.
+
+| Option | What it means | For | Against |
+|---|---|---|---|
+| 1. Keep ticking in the background | Drive the hidden tab's game loop from incoming relay messages or a Web Worker timer instead of page timers; do not pause on focus loss in multiplayer | Others never notice a tab switch | Most work; fights the browser; sound and drawing must be skipped while hidden; not known to be reliable on phones |
+| 2. Timeouts only | Leave the existing behaviour: others stall, see the reconnect dialog at 3 s, and the hidden player is replaced by a computer player after the timeout | Already written; simple | A short tab switch stalls everyone, and about 30 s away loses your seat for good; no rejoin |
+| 3. Pause for all | The hidden tab (or the relay on its behalf) tells the room "player away"; everyone shows a waiting box for up to a cap (for example 60 s), then option 2 applies | Honest and predictable; small protocol addition | One player can stall the game; needs a new message or a longer, configurable timeout |
+
+Conductor's recommendation: measure first (work item 6), start with option 2 using a longer web timeout plus a clear "keep this tab visible" notice, then add option 3; option 1 only if play tests show it is needed.
+
+### Q5 Compatibility with native players
+
+- Checks that exist [code]: version range at join (`REJECT_VERSION_TOO_OLD/NEW`, `netdlg.cpp:4737-4748`); RULES.INI identity (`REJECT_MISMATCH`, :4690); desync detection by comparing the last 32 frame CRCs (`queue.cpp:3298`), with an out-of-sync box offering Continue (drops all connections) or Stop (:3302-3309).
+- Hazards [code]:
+  - `EventClass` is packed with bitfields and sent as raw memory (`event.h:48,113-123`; `queue.cpp:2471`). Its union contains a `void* Pointer` (`event.h:223`), 4 bytes in the browser build and 8 on a 64-bit native build, which changes the packet size only if that member is the largest: not checked.
+  - `GlobalPacketType` is packed with bitfields (`session.h:292-399`); the size of the address class inside it: not checked.
+  - Enums are fixed width (`event.h:55`, `defines.h:370,962`). Floating point in game logic is almost nil (`house.cpp:3875` is a UI message; rules use fixed point, `rules.cpp:93`).
+- Transport side: the relay would also need a UDP socket on port 1234, map each native player's real IP to a made-up address, and forward broadcasts both ways. One public IP could stand for only one native player, because peers are told apart by IP alone (`wspudp.cpp:570`). Native players would need a new "connect to relay" option, because they find games by LAN broadcast.
+- Answer: assume browser-only for the first version. Browser players all run the same compiled program, which is the best case for staying in sync. Native interop is possible in principle but is a separate, large piece of work with unproven cross-build determinism.
+
+### Recommended approach (conductor's synthesis, not approved by the owner)
+
+1. Web transport: a new web-only class implementing `WinsockInterfaceClass` over one WebSocket to the relay, selected under `__EMSCRIPTEN__` at `redalert/init.cpp:903,954`; native builds unchanged. Incoming messages are only queued by the browser callback and handed to the game when it polls (the game uses Asyncify, so callbacks must not call into game code).
+2. Relay with rooms and join codes (Q3). A room behaves like a LAN, so the existing lobby, ACK/retry and lockstep code is reused unchanged.
+3. Make the waits yield. The lobby has about 18 loops of the form `while (Ipx.Global_Num_Send() > 0 && Ipx.Service())` in `netdlg.cpp` (for example :1680, 2335, 3027, 4169, 6931), two wait-for-GO loops (`netdlg.cpp:4513, 6050`), one in `sendfile.cpp:136`, the out-of-sync loop (`queue.cpp:3303`) and `Wait_For_Players` (`queue.cpp:955`), which ends with `Frame_Limiter(FL_NO_BLOCK)` (`queue.cpp:1244`). Conductor's reading of `common/framelimit.cpp:28,45`: with `FL_NO_BLOCK` the limiter skips its sleep, and the sleep (`common/mssleep.h:34-52`, `emscripten_sleep`) is the only place the web build hands control back to the browser, so these loops would spin without ever letting a WebSocket message arrive. Not run; this is the main technical risk. Idea to test first: one short yield inside the web transport's poll, which every such loop already calls through `Service()`.
+4. Hidden tabs: as recommended under Q4.
+5. Browser-only; each player needs the same game data (the phase 2 loader's hosted route covers this) and the RULES.INI check already guards it.
+
+### Work items
+
+| # | Item | Size | Notes |
+|---|---|---|---|
+| 1 | Confirm in a browser that today's networking fails at `Open_Socket`, and capture the console | S | Turns the Q2 reading into an observation |
+| 2 | Web transport class over WebSocket | M | New web-only file in `common/`, two-line selection in `init.cpp` |
+| 3 | Relay with rooms and join codes, runnable locally | S | Node.js + `ws`, about 150-250 lines [est]; lives outside the game build |
+| 4 | Yield audit of the blocking waits under Asyncify | M | Unknown until tried; could be S if the single yield in the transport poll works, L if each loop needs work |
+| 5 | Two-browser test harness: two headless Edge pages play a network game through the local relay for N minutes with CRCs in sync | M | Extends the existing probe tools |
+| 6 | Hidden-tab measurement, then the chosen policy | M | S for option 2 with a longer timeout; more for options 3 or 1 |
+| 7 | Join flow on the page: create game, show code/link, `?join=CODE` | S-M | How much of the old LAN lobby to show is an owner decision |
+| 8 | Host the relay with TLS (`wss://`), plus basic limits against abuse (room count, message rate, idle timeout) | S | Hosting choice open |
+| 9 | Measure latency through the relay and tune `MaxAhead`/`FrameSendRate` | S | Needs two real machines |
+| 10 | Scenario file transfer (`sendfile.cpp`): test or switch off for the web | S | |
+| 11 | Later, only if needed: WebRTC transport | L | Third-party library, TURN |
+| 12 | Later, only if wanted: native interop | L | Relay UDP side, native "connect to relay" option, cross-build determinism |
+
+Overall, items 1-10: medium to large (conductor's estimate; no day count was produced).
+
+### Key risks
+
+- Blocking waits never yield, so the page freezes waiting for a packet that cannot arrive (see approach 3). Highest risk, cheapest to test early (items 1-4).
+- Hidden or throttled tabs stall or drop players (Q4).
+- TCP head-of-line blocking plus the game's own retries may cause stutter on poor connections; not measured.
+- An open relay can be abused; it needs limits, and hosting cost is not pinned down (Cloudflare free-plan status unclear).
+- Secure pages need `wss://` and a certificate.
+- Desync between browsers is unlikely with one shared build but unproven; native interop determinism is unproven and the event packet size may differ.
+- All findings are from reading code and documentation; nothing was run.
+
+### Open questions for the owner
+
+1. Hosting for the relay: Cloudflare or a small rented server?
+2. Hidden-tab policy (Q4 options)?
+3. Is browser-only acceptable for the first version?
+4. Join by code/link only, or a public game list too?
+5. Maximum players for a first version?
+
+### Things the workers were least sure of
+
+- That the `setsockopt` failure is the first runtime failure (not run).
+- Whether Cloudflare's free plan includes Durable Objects.
+- That relay latency is good enough.
+- Whether `void* Pointer` changes `sizeof(EventClass)`.
+- Whether `Frame_Limiter(FL_NO_BLOCK)` yields.
+- The exact `mplayer.cpp` line numbers, and whether the modem code in nulldlg is fully unreachable.
+
+### Hand-off (end of session 6)
+
+State: only SPIKE.md changed; no builds, no servers, nothing outside the repo created.
+
+To pick up, in order:
+
+1. Owner answers the open questions.
+2. Work items 1 to 4 as the first multiplayer ticket (they settle the main risk cheaply).
+
+Other open items from Session 5 stand: higher-resolution ticket decisions, clang-format 14 check, full Tiberian Dawn build and CI presets, leftover folders.
