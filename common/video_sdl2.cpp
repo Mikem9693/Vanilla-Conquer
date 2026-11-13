@@ -47,6 +47,10 @@
 
 #include <SDL.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 extern WWKeyboardClass* Keyboard;
 static SDL_Window* window;
 static SDL_Renderer* renderer;
@@ -254,6 +258,40 @@ bool Set_Video_Mode(int w, int h, int bits_per_pixel)
     }
 
     DBG_INFO("Created SDL2 %s window in %dx%d", (win_flags ? "fullscreen" : "windowed"), win_w, win_h);
+
+#ifdef __EMSCRIPTEN__
+    /*
+    ** The page's Fullscreen button (Module.requestFullscreen) resets the canvas to its "native" size, which
+    ** only Emscripten's own setCanvasSize records. SDL sizes the canvas directly, so record that size here;
+    ** otherwise the canvas is set to 0x0 and stays black.
+    */
+    EM_ASM({
+        var c = Module['canvas'];
+        if (c) {
+            c.widthNative = c.width;
+            c.heightNative = c.height;
+        }
+        /* In fullscreen (resize off) show the canvas at the largest whole-number scale, centred on black. */
+        if (typeof Browser != 'undefined' && !Browser.vcFitCanvas) {
+            Browser.vcFitCanvas = Browser.updateCanvasDimensions;
+            Browser.updateCanvasDimensions = function(canvas, wNative, hNative) {
+                Browser.vcFitCanvas(canvas, wNative, hNative);
+                var box = canvas.parentNode;
+                var r = window.devicePixelRatio || 1;
+                var full = !Browser.resizeCanvas && canvas.widthNative && getFullscreenElement() === box;
+                if (full) {
+                    var f = Math.floor(
+                        Math.min(screen.width * r / canvas.widthNative, screen.height * r / canvas.heightNative));
+                    f = Math.max(1, f);
+                    canvas.style.setProperty('width', f * canvas.widthNative / r + 'px', 'important');
+                    canvas.style.setProperty('height', f * canvas.heightNative / r + 'px', 'important');
+                    box.style.cssText = 'display:flex;align-items:center;justify-content:center;background:black';
+                }
+                canvas.style.imageRendering = full ? 'pixelated' : '';
+            };
+        }
+    });
+#endif
 
     pixel_format = SDL_GetWindowPixelFormat(window);
     if (pixel_format == SDL_PIXELFORMAT_UNKNOWN || SDL_BITSPERPIXEL(pixel_format) < 16) {

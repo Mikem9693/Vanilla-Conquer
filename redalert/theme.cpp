@@ -234,6 +234,26 @@ ThemeType ThemeClass::Next_Song(ThemeType theme) const
 {
     if (theme == THEME_NONE || theme == THEME_PICK_ANOTHER
         || (theme != THEME_QUIET && !_themes[theme].Repeat && !Options.IsScoreRepeat)) {
+
+        /*
+        **	Guard against endless loops below: play nothing if no theme is allowed, and
+        **	keep the current theme if shuffling and it is the only allowed one.
+        */
+        bool any_allowed = false;
+        bool other_allowed = false;
+        for (ThemeType t = THEME_FIRST; t <= THEME_LAST; t++) {
+            if (Is_Allowed(t)) {
+                any_allowed = true;
+                other_allowed = other_allowed || t != theme;
+            }
+        }
+        if (!any_allowed) {
+            return (THEME_QUIET);
+        }
+        if (Options.IsScoreShuffle && !other_allowed) {
+            return (theme);
+        }
+
         if (Options.IsScoreShuffle) {
 
             /*

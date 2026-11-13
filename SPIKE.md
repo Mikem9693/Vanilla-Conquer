@@ -1029,3 +1029,197 @@ To pick up, in order:
 3. Owner decides on the `Next_Song` fix (blocker 1).
 4. Owner re-tests the browser skirmish.
 5. The remaining open items: the native music question, the leftovers, and whether to commit.
+
+## Session 5: 4a blockers fixed (13 Nov 2026)
+
+**Result: both 4a blockers are fixed in code. The no-music run that used to hang now passes, and the owner's 10+ minute play test with Crates on completed with no crash (the crash was never reproduced, so "not seen again", not proof). A new blocker, fullscreen black screen, was found, fixed and confirmed by the owner, and fullscreen now uses a whole-number scale. One new ticket raised: higher game resolution. Committed at the end of the session.**
+
+Owner's decisions (13 Nov 2026):
+
+1. This session's job: finish the session 4a hand-off.
+2. Blocker 2 (crate crash): apply the fix without reproducing the crash first (cheapest option). The rigged-crate reproduction from the 4a hand-off was not done. The owner's own 10+ minute play test with Crates on is the evidence.
+3. Blocker 1 (`Next_Song` endless loop): fix approved.
+
+Consequence: `build-web/` no longer had to be kept as "the build that crashed", and it has been rebuilt. The 4a crash addresses (`0x8ab9c`, `0x8be38`) do not apply to the new `.wasm`.
+
+### Source changes
+
+| File | Change |
+|---|---|
+| `redalert/drive.cpp:1259-1260` | In `DriveClass::Start_Of_Move`, inside `if (!Start_Driver(dest)) {`, added `if (!IsActive) return (false);` before `TrackNumber = -1;`. Two lines, same style as the existing guards at 1195-1199. |
+| `redalert/theme.cpp:237-255` | `ThemeClass::Next_Song`: new check before the shuffle and sequential loops (below). No track allowed: returns `THEME_QUIET`. |
+| `tiberiandawn/theme.cpp:228-246` | Same check. No track allowed: returns `THEME_NONE` (Tiberian Dawn has no `THEME_QUIET`). |
+| `tiberiandawn/drive.cpp` | Not changed (below). |
+
+No INI gate: both fixes act only in states that crashed or hung before.
+
+**The `Next_Song` check.** One pass over `THEME_FIRST..THEME_LAST` using the existing `Is_Allowed()`. If no track is allowed, return "play nothing". If shuffle is on and the only allowed track is the current one, return the current track (the shuffle loop would otherwise never end). The new code does not call `Sim_Random_Pick`, so behaviour with tracks present is unchanged.
+
+| Later frames (read from code) | What happens |
+|---|---|
+| Red Alert | `Next_Song(THEME_QUIET)` returns at its first check. `Play_Song(THEME_QUIET)` runs every frame: it stops the current track and loads no file. |
+| Tiberian Dawn | `Next_Song(THEME_NONE)` recurses once with `THEME_PICK_ANOTHER`; the scan returns `THEME_NONE` again, so there is no endless recursion. Cost: about 50 `Is_Allowed` calls plus `Stop()` per frame, no file access. |
+| Side effect, both games | Once quiet this way, music stays silent until something calls `Queue_Song`, even if tracks become allowed later. Before the fix this state was a hang. |
+
+**Other `Start_Driver` callers in Red Alert** (read from code, no change):
+
+| Caller | Why no change |
+|---|---|
+| `drive.cpp:429` (`Force_Track`) | Discards the result and does nothing after the call. |
+| `drive.cpp:749` | Gets false for a dead unit (`UnitClass`/`VesselClass::Start_Driver` check `IsActive`), so `Set_Speed` is not reached. Plain fields are still written, and line 806 writes `SpeedAccum` and returns true on the dead unit (no virtual call). |
+| `infantry.cpp:4170`, `2287-2289` | Check `IsActive` straight after the call. |
+
+**Tiberian Dawn `drive.cpp`** (read from code, not changed): a TD unit can be killed by a crate (`cell.cpp:2354` calls `Take_Damage`; `unit.cpp:1094` clears `IsActive` on delete). But TD's `Goodie_Check` still returns true (`cell.cpp:2416`), and `FootClass`/`UnitClass::Start_Driver` pass that on, so the false branch at `tiberiandawn/drive.cpp:1260` is not reached. Side note, not acted on: TD's true path (`tiberiandawn/unit.cpp:3521`) runs `Mark_Track` on the dead unit; judged harmless there.
+
+### Build and test results
+
+| Check | Result |
+|---|---|
+| Native build (incremental) | 0 errors, 0 warnings. `build/` is configured with Tiberian Dawn off, so this compiled Red Alert only. |
+| `tiberiandawn/theme.cpp` on its own, in a scratch build folder | 0 errors, 0 warnings. A full Tiberian Dawn build and link was **not** done. |
+| Format check | **Skipped**: no clang-format of any version is installed on this machine. CI (clang-format 14) has not seen these changes. |
+| Web build | 0 errors, 1 warning (the usual limited-optimisation notice). `vanillara.wasm` is now 14,292,644 bytes (was 14,291,949). |
+| No-music run (the old hang, blocker 1) | **Pass.** Data `~/ra-data/skirmish-min` (no `SCORES.MIX`, the set the 4a "n1" run used), generated INI at `MultiplayerScoreVolume=0.25`. Headless Edge: the skirmish started and ran to t=142 s, about 116 screen updates per second, no errors. |
+| Normal run | **Pass.** `skirmish-web` data, headless Edge, map "A Path Beyond", Russia, AI Players 2, Crates on (the default); settings confirmed from the screenshot `c5-shot-gauge1.png`. 5 minutes in game, 672 heartbeats, no errors, no "function signature mismatch". |
+
+Limits of the normal run: it was not shown that any crate was picked up, and the final screenshot shows the player's side with its starting units and 10000 credits, so the scripted player did not build a base. This run shows nothing else broke; it does **not** prove the crash fix.
+
+Results and pictures: `build-web/probe-tools/results-5/` (`nomusic/`, `normal/`), git-ignored.
+
+Commands used:
+
+```sh
+# Native build, incremental (Red Alert only in this build folder)
+cmake --build build -j8
+```
+
+```sh
+# Load the Emscripten tools into this shell, then build the web version
+source ~/emsdk/emsdk_env.sh
+cmake --build build-web --target VanillaRA -j8
+```
+
+```sh
+# Choose which data folder gets packaged into the web build (then rebuild)
+cmake -B build-web -DWEB_DATA_DIR=...
+```
+
+```sh
+# Click at screen position X,Y in the live test page (probe tools, session 4a)
+echo click@X@Y >> cmd-RUN.txt
+```
+
+`probe_server.py` and `edge.sh` start the test server and headless Edge, and `edge-kill.ps1` stops the test Edge (see the session 4a probe tools).
+
+Thing to know: a `pkill -f` pattern (kill processes whose command line matches) matched and killed the worker's own shell. `pgrep` (list matching processes without killing them) was used instead to find the process first.
+
+### State left
+
+Checked by the conductor with read-only commands:
+
+- `git status --short` lists only `redalert/drive.cpp`, `redalert/theme.cpp`, `tiberiandawn/theme.cpp` and `SPIKE.md`.
+- `build-web/` holds the fixed build with the normal `skirmish-web` data: `vanillara.data` is 28,098,196 bytes, and `WEB_DATA_DIR` in `build-web/CMakeCache.txt` is `~/ra-data/skirmish-web`.
+- Nothing listening on ports 8000-8009.
+- As before, `build-web/` must never be committed, uploaded or deployed while `vanillara.data` is in it.
+
+### Blockers, session 5
+
+| # | Blocker | Status |
+|---|---|---|
+| 1 | `Next_Song` loops forever when music is on and no track is available | Fixed (no-music run passes) |
+| 2 | Crash in unit movement after 10+ minutes (crate kills a unit that is starting to move) | Fix in place. Owner's play test with Crates on, 10+ minutes: full skirmish completed, no crash. The crash was never reproduced, so this means "not seen again", not proof. |
+| 3 | Fullscreen, entered with the button on the page, gives a black or blank screen (owner's browser, fixed build) | Fixed (web only, `common/video_sdl2.cpp`). Real-fullscreen black screen confirmed gone by the owner's re-test. |
+
+### Owner's play test
+
+The owner's words, quoted exactly:
+
+> "Play test complete - Full skirmish completed with no issues - Russia vs 1 allied & 1 soviet AI - Large Map. Game speed adjusted in game with no issue - fullscreen crahses game"
+
+Answers the owner picked from options the conductor offered (not free text):
+
+| Question | Owner's answer |
+|---|---|
+| How fullscreen was entered | "Button on the page" |
+| What the crash looked like | "Black or blank screen" |
+| Crates and length of the completed skirmish | "Crates on, 10+ minutes" |
+| What to do about fullscreen | "Diagnose and fix now" |
+
+Not asked and not known: which of the page's tick boxes were set, any console message, whether a refresh recovered it, which map by name, how long the game lasted beyond "10+ minutes", whether any unit died on a crate.
+
+### Blocker 3: fullscreen black screen
+
+| | |
+|---|---|
+| Cause (observed in a test) | The game did not crash. Emscripten's `Module.requestFullscreen` resets the canvas to a saved "native" size (`canvas.widthNative`/`heightNative`, `vanillara.js:7766-7790` in that build). Only Emscripten's own `setCanvasSize` saves that size; SDL sizes the canvas directly, so the saved size was empty. The canvas became 0x0 and black, and stayed black after leaving fullscreen, with the game still running (about 117 draws a second, no wasm error). |
+| Reproduced | Headless Edge, page defaults (resize off, pointer lock on). Headless Edge refuses real fullscreen, so the probe page faked the browser's fullscreen event. |
+| Fix | `common/video_sdl2.cpp`: an `#include <emscripten.h>` at about lines 50-52, and an `EM_ASM` block (JavaScript written inside C++) after the "Created SDL2 window" log line in `Set_Video_Mode`, all inside `#ifdef __EMSCRIPTEN__`. It records the canvas size SDL created. 19 lines. Native builds unaffected. |
+| Builds | Web: 0 errors, 1 usual warning. Native: 0 errors, 0 warnings. |
+| Smoke run | Menu; fullscreen on and off (canvas stays 640x400); skirmish with fullscreen on and off about 34 s into play; ran about 75 s; no errors. Results: `build-web/probe-tools/results-5/fullscreen/`. |
+
+The owner's re-test, quoted exactly:
+
+> "All works correctly - Scaling is an issue on 1080p monitor everything is too large/stretched"
+
+Answers the owner picked from offered options: where = "Fullscreen only"; wanted look = "Exact 2x, centred"; when = "Fix now if small".
+
+### Fullscreen scaling change
+
+| | |
+|---|---|
+| Cause (read from `vanillara.js:7776-7794`, confirmed in the probe) | Emscripten scaled the canvas by `min(screen.width/640, screen.height/400)` = 2.7, giving 1728x1080, horizontally centred, top-aligned, smoothed. The shape was kept; the "stretched" look came from uneven 2.7x pixels. |
+| Change | 19 more lines in the same `EM_ASM` block (38 added lines in `common/video_sdl2.cpp` in total, all web-only). It wraps Emscripten's `Browser.updateCanvasDimensions`: in fullscreen with resize off it uses the largest whole-number scale that fits (minimum 1), allowing for `devicePixelRatio`, centres the canvas on black, and sets `image-rendering: pixelated` in fullscreen only. Windowed view unchanged. |
+| Risk | Relies on Emscripten internals (`Browser`, `getFullscreenElement`); an Emscripten upgrade could break it. |
+| Probe (screen faked as 1920x1080) | Canvas shown at 1280x800, left 320, top 140 (measured box 1282x802 at 319,139, because of the 1 px canvas border the windowed page already has). Clicks on Multiplayer, Skirmish and OK landed while scaled, and a skirmish started. Results: `build-web/probe-tools/results-5/fullscreen-scale/`. |
+| Builds | Web: 0 errors, 1 usual warning. Native: 0/0. `vanillara.wasm` is now 14,293,059 bytes. |
+| Not verified by any worker | Real fullscreen, pointer-locked mouse aim, Windows display scaling other than 100%, other screen sizes, the "Resize canvas" tick box. |
+
+The owner's second re-test, quoted exactly:
+
+> "Fix has improved menu appearance - in game assets still appear too large relative to screen size - Gives a zoomed in appearance - will need to render more pixels than game natively does"
+
+### New ticket: higher game resolution
+
+Not a blocker of 4a. Owner's decision, picked from offered options: "Record as new ticket (Recommended)". No work done on it this session.
+
+Conductor's read-only check (grep only): the resolution is fixed in code. `redalert/globals.cpp:179-180` sets `ScreenWidth`/`ScreenHeight` to `GBUFF_INIT_WIDTH`/`GBUFF_INIT_HEIGHT` (640x400); `redalert/startup.cpp:334-335` sets 320x200 for DOS mode; `startup.cpp` uses the two globals 27 times. No setting for other sizes was found in `globals.cpp`, `startup.cpp`, `init.cpp` or `common/settings.*`.
+
+Not scoped: what else is tied to 640x400 (map view, sidebar, radar, menus, mouse). It is shared game code, so by the project rule it would go behind a setting, default unchanged. First step: a read-only scoping pass. Until then, the 2x fullscreen change is the interim.
+
+### Open items
+
+1. The higher-resolution ticket (above).
+2. clang-format 14 not run on any changed file, including `common/video_sdl2.cpp` (it may reformat the `EM_ASM` block).
+3. Full Tiberian Dawn build and the CI presets not run.
+4. Still open from 4a: whether native music was heard in the skirmish itself or only at the menu; the leftover folders `~/.config/vanilla-conquer/vanillatools/`, `~/ra-data/allied-extract`, `~/ra-data/skirmish-min-build`, `~/ra-data/smoke-min`, `~/ra-data/smoke-full`.
+5. If the crash returns: the rigged-crate reproduction from the 4a hand-off is still available as a follow-up.
+
+### Hand-off (end of session 5)
+
+State (checked by the conductor): `build-web/` holds the current build with the normal `skirmish-web` data; nothing listening on ports 8000-8009. Files changed this session: `common/video_sdl2.cpp`, `redalert/drive.cpp`, `redalert/theme.cpp`, `tiberiandawn/theme.cpp`, `SPIKE.md`. These were committed at the end of the session (owner's choice: "Worker commits"); not pushed. As before, `build-web/` must never be committed, uploaded or deployed while `vanillara.data` is in it.
+
+Results:
+
+| Check | Result |
+|---|---|
+| Blocker 1, no-music run | Passed (headless Edge) |
+| Blocker 2, crate crash | Fix applied; not reproduced; owner's play test (Crates on, 10+ minutes, full skirmish) completed with no crash |
+| Blocker 3, fullscreen black screen | Fixed; owner's re-test: "All works correctly" |
+| Fullscreen scaling | Whole-number scale, centred; menus improved; in-game view still looks zoomed in (new ticket) |
+| Native build | Clean (Red Alert only) |
+| Format, full TD build, CI presets | Not run |
+
+To pick up, in order:
+
+1. Higher-resolution ticket: read-only scoping pass first.
+2. clang-format 14 check on the changed files; full Tiberian Dawn build and CI presets.
+3. The 4a leftovers: the native music question and the leftover folders.
+
+To play the current build in the browser:
+
+```sh
+# Serve the build-web folder on this machine only, at port 8000
+python3 -m http.server 8000 --bind 127.0.0.1 --directory build-web
+```
+
+Then open http://localhost:8000/vanillara.html.

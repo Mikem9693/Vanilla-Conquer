@@ -1256,6 +1256,8 @@ bool DriveClass::Start_Of_Move(void)
         IsNewNavCom = false;
         TrackIndex = 0;
         if (!Start_Driver(dest)) {
+            if (!IsActive)
+                return (false);
             TrackNumber = -1;
             Path[0] = FACING_NONE;
             Set_Speed(0);
