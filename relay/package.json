@@ -1,0 +1,15 @@
+{
+  "name": "ra-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WebSocket relay that makes a room of browser players behave like a LAN",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "license": "GPL-3.0",
+  "dependencies": {
+    "ws": "^8.23.0"
+  }
+}
