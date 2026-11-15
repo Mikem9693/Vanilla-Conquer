@@ -1671,3 +1671,115 @@ Tips: plain `grep` here is ugrep and silently skips `redalert/conquer.cpp`; use 
 ### Hand-off (end of session 8)
 
 Code commits `a52d9d2` and `25fdfb5`, then notes commits `4e1702a` and "Notes: session 8 owner confirmation"; nothing pushed. Tree clean after the notes commit. `build-release/` (including `probe-tools/`) and `~/ra-data/session8/` are outside version control.
+
+## Session 9: Multiplayer (15 Nov 2026)
+
+**Result: stage A of multiplayer works locally. Two browser pages joined the same room through a small relay, met in the game's own Network lobby and played one match on A Path Beyond for about 15 minutes with no out-of-sync box, no waiting dialog and no console errors. "Same game on both pages" rests on matching frame counters and the absence of the out-of-sync box: neither page was seen showing the other player's units. Tested only in headless Edge on one machine with two players. Hiding a tab for up to 30 s was harmless; at 60 s the game slowed to a crawl for both players but nobody was dropped.**
+
+**Stage B has NOT started. It waits for the owner's own two-window test and approval.**
+
+Evidence labels: [obs] observed by running, [code] read from code, [inf] inferred, "not run" where nothing was tried.
+
+### Ticket and approach
+
+Ticket 8 "Multiplayer, iteration 1", branch `multiplayer`. Approach agreed by the owner: a browser version of the one transport class the game uses for LAN play, sending over a WebSocket (a lasting two-way connection between page and server), plus a small Node.js relay with rooms. Each room behaves like a LAN, so the game's lobby, retry and lockstep code stay unchanged. Browser-only (no mixing with desktop players).
+
+- Stage A (this session) = prototype: relay, transport, join by `?room=CODE` in the page address, hidden-tab measurement.
+- Gate: the owner tests before stage B (room rules, page flow, hidden-tab policy, relay ready to host).
+- Method: conductor plus Opus workers (relay, transport, test, notes).
+
+### Stage A: what was built
+
+Two local commits, not pushed:
+
+- `e2d0ba3` "Relay: stage A prototype (rooms, join by code, forward)". The conductor amended its message to fix the co-author line (it was `1de0b82`).
+- `6fabed4` "[RA] Web: WebSocket relay transport (stage A prototype)".
+
+Relay [code]: `relay/server.js` (123 lines), `package.json`, `package-lock.json`, `.gitignore` (node_modules), `test.js` (95 lines). Node.js with the `ws` package 8.23.0. Listens on env `HOST` (default 127.0.0.1) and `PORT` (default 8002). Logs only the listening address and room/client counts: no IP addresses, room codes or payloads. Room limits live in one `RULES` object plus `joinRefusal()`. Each room has unused `started` and `createdAt` fields ready for stage B.
+
+Wire protocol v0 [code]:
+
+- Connect `ws://HOST:PORT/?room=CODE`; CODE must match `^[A-Za-z0-9]{4,32}$`, else close code 4000.
+- Stage A rooms are join-or-create. Ids 1..254 count up per room and are never reused. A 9th client is refused with close code 4001.
+- First frame from the relay is text `{"t":"hello","id":N,"peers":[...]}`; the others get text `{"t":"join","id":N}` / `{"t":"leave","id":N}`.
+- Game data is binary. Client to relay: byte 0 = destination id (0 = everyone else in the room). Relay to client: byte 0 = sender id. The rest is the payload, unchanged. No echo to the sender. Frames over 2048 bytes are dropped. A room is deleted when its last client leaves.
+- Small deviations from the brief: a 1-byte frame (no payload) is dropped; a message to your own id is dropped; frames over 64 KB close the connection (a `ws` library limit).
+
+Transport [code]: new `common/wspudp_web.cpp` (271 lines) implements the same `UDPInterfaceClass` (declared in `common/wspudp.h`) for the web. `common/CMakeLists.txt` (+7/-1) compiles it instead of `wspudp.cpp` when `EMSCRIPTEN`, the repo's usual "backend chosen by which file is compiled" pattern, so `redalert/init.cpp`, `netdlg.cpp`, `wspudp.h` and `wsproto.*` are unchanged.
+
+- Uses the browser `WebSocket` through `EM_JS` (C++ calling inline JavaScript), arraybuffer frames, and a JavaScript-side receive queue capped at 4096 frames that the game drains when it polls.
+- Relay id N appears to the game as address 10.0.0.N; broadcast goes to destination 0. The native game discards its own broadcasts; here the relay never echoes and the file drops any frame claiming to be from itself.
+- Room code comes from `?room=CODE`. Relay address is `Module.relayUrl` if set, else `ws://<page hostname>:8002` (`wss://` when the page is https, an addition not in the brief). With no valid `room`, `Open_Socket` returns false. With one, it yields in 20 ms steps for up to 5 s waiting for the hello.
+- Yield (the session 6 main risk, a lobby loop freezing the browser): when a poll received nothing and at least 10 ms have passed since the last yield, it sleeps 1 ms (`us_sleep`). No lobby loop froze on the screens tested [obs], but only those screens were exercised.
+- Build with `scripts/build-web-release.sh`: 0 errors (warnings hidden by `-w`) [obs]. clang-format is not installed, so CI's format check was not run on the new file.
+
+Max players [code]: 8. `MAX_PLAYERS 8` at `redalert/defines.h:3605`; `Rule.MaxPlayers(8)` at `redalert/rules.cpp:167`; rules.ini `[Maximums] Players` can override it at `redalert/rules.cpp:603`. The relay limit is also 8.
+
+### Stage A: test results
+
+All in headless Edge (no visible window), two separate browser instances (debug ports 9333/9334, separate profiles), [obs] unless marked.
+
+- Relay self-test: 15 of 15 passed.
+- Lobby (transport worker, throttling switched off): both pages with `?room=TEST01` reached the Network lobby; the host clicked "New"; page 2 saw "Noname's Game" and joined; the host's list showed the joiner "bravo".
+- Match (test worker): host Noname and joiner bob on A Path Beyond, 20:38 to 20:53 (about 15 minutes). Host gave orders from 20:40 (deploy MCV, two power plants, group moves); joiner from 20:46 (deploy MCV, a power plant, group moves). Each side's orders worked on its own screen. No out-of-sync box, no waiting dialog, no console errors on either page.
+- In a second match the game frame counter, read from memory at the same moment, was 23489 / 23483 (within 6 frames).
+- NOT seen: one player's units on the other player's screen. "Same game on both pages" rests on the frame counters and the missing out-of-sync box.
+- Speed: about 20.8 frames per second on both pages over 5-second intervals; a power plant took about 11 s; both pages responsive.
+- Skirmish regression: with no `?room=`, a Skirmish game started and advanced at 21 fps.
+- Not done: visible windows; two real machines; more than 2 players; latency through a remote relay.
+
+### Hidden-tab measurements
+
+Edge default throttling (the browser slowing timers in background tabs); the joiner's page hidden by activating a second tab, `document.hidden` true. [obs] unless marked.
+
+- Throttling check: a silent hidden tab got 1 timer per second instead of about 10, so headless Edge throttles like a real browser. The game tab is spared while it plays sound (its audio is "running"); throttling began once it went quiet.
+- 10 s hidden: host unaffected, about 17-20 fps, no stall, no dialog; the joiner caught up on return; both at 21 fps afterwards.
+- 30 s hidden: host about 18 fps, no stall; the joiner caught up; both fine.
+- 60 s hidden: throttled from about 30 s. The host slowed to about 1 fps and the joiner stopped. On return the joiner resumed at once, no out-of-sync box, nobody dropped; both back to 21 fps within 5 s.
+- No reconnect dialog in the 60 s run: 28 s into the stall the host showed none (one screenshot only). From code (`redalert/queue.cpp:565-573, 2230-2248`) the dialog should appear after about 3 s with no packets and the player be dropped after roughly 15-30 s [code]. The worker's guess, not checked: the throttled tab still sends about once a second, which keeps the connection alive, so the game crawls instead of dropping the player. A run with the host's view uncovered also showed a near-freeze from about 30 s.
+- An early 60 s run was tainted (a misplaced drag opened the host's Options menu) and was repeated cleanly.
+- Not run: hiding for more than 5 minutes (Edge's harsher throttling, about one timer per minute, should lead to the drop path); hiding the host.
+- Conductor's reading [inf]: short tab switches are harmless while the game is making sound; a longer absence slows everyone to a crawl rather than dropping the player. This feeds stage B item 7 (hidden-tab policy), which is the owner's decision.
+
+### How to run the relay and test locally
+
+Node is not on PATH in WSL; use Emscripten's bundled Node (it has npm). Four terminals from the repo root:
+
+```
+cd relay && PATH=~/emsdk/node/24.19.0_64bit/bin:$PATH npm install     # once
+HOST=127.0.0.1 PORT=8002 ~/emsdk/node/24.19.0_64bit/bin/node relay/server.js
+python3 -m http.server 8000 -d build-release/site
+python3 scripts/serve-pack.py ~/ra-data/skirmish
+```
+
+Then open two browser windows (not two tabs in one window, or one gets throttled) at `http://localhost:8000/?room=TEST01`; any 4-32 letters/digits work as the room. In the game: Multiplayer Game, Network; one player picks "New", the other joins the listed game; the host starts it. Relay self-test: `~/emsdk/node/24.19.0_64bit/bin/node relay/test.js`. The test worker started `server.js` by hand with the command above [obs]. At the end of the session a relay was still listening on 127.0.0.1:8002 (pid 60273); the web servers on 8000/8001 were stopped.
+
+Test rig (git-ignored, `build-release/probe-tools/`): `drive2.js` (two-page driver: cropped screenshots, drag, pixel-change watch, window resize, raw devtools commands), `d2.sh`, `edge2.sh`, `edge3.sh`, `monitor.js`, `hide.js`, `throttle.js`, `trial.sh`, `mpstart.sh`, `killedge.ps1`. Caveats: the frame counter address (wasm 405664) is good for this build only; two screenshots at once on one page left it stuck at 640x400 until the window was resized (a test setup problem, not the game).
+
+### Relay size
+
+`relay/server.js` 123 lines and `relay/test.js` 95 lines, one dependency (`ws` 8.23.0) [code]. The transport file is 271 lines [code].
+
+### Decisions
+
+The conductor's; the owner may overrule:
+
+- The transport is a second implementation of `UDPInterfaceClass` chosen in CMake, so `init.cpp` is untouched. The `common/CMakeLists.txt` source-list edit was treated as part of the transport.
+- Stage A rooms are join-or-create.
+- Relay port 8002.
+- A fresh worker per task once a worker's context gets large.
+
+### Open items
+
+- The owner's own two-window test (the gate).
+- `Close_Socket` is not overridden, so the WebSocket closes only when the object is destroyed or the socket reopened.
+- Relay join/leave messages are ignored by the game side.
+- The yield's effect on frame rate is not isolated (20.8 fps in the match vs 21 in skirmish).
+- Cross-screen visibility of the other player's units not confirmed.
+- Hidden for over 5 minutes, and a hidden host: not run.
+- clang-format check not run on `common/wspudp_web.cpp`.
+- Stage B items 5-8 not started: room rules, page flow with agreed element IDs, hidden-tab policy, relay ready to host.
+
+### Hand-off (stage A gate)
+
+Code commits `e2d0ba3` and `6fabed4`, then the notes commit "Notes: session 9 multiplayer stage A"; nothing pushed. Tree clean after the notes commit. Next step: the owner's own test. Stage B only on the owner's approval.
