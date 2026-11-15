@@ -160,8 +160,13 @@ if(NETWORKING)
         connect.cpp
         ipxaddr.cpp
         wsproto.cpp
-        wspudp.cpp
     )
+    # The browser cannot use UDP: the web build sends packets over a WebSocket relay instead.
+    if(EMSCRIPTEN)
+        list(APPEND COMMONV_SRC wspudp_web.cpp)
+    else()
+        list(APPEND COMMONV_SRC wspudp.cpp)
+    endif()
 endif()
 
 file(GLOB_RECURSE COMMON_HEADERS "*.h")
