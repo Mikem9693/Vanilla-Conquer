@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vanilla Red Alert</title>
+</head>
+<body>
+<h1>Vanilla Red Alert</h1>
+
+<p id="status" data-state="working">Loading...</p>
+<progress id="progress" hidden></progress>
+
+<p>
+  <button id="play" disabled>Play</button>
+  <button onclick="Module.requestFullscreen(false, false)">Fullscreen</button>
+</p>
+
+<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+
+<p>
+  <label>Use your own Red Alert files (MAIN.MIX, REDALERT.MIX, and SCORES.MIX if needed):
+    <input id="own-files" type="file" multiple></label>
+</p>
+<p><button id="clear-data">Clear saved game data</button></p>
+
+<section>
+  <h2>Legal</h2>
+  <p>Legal notices go here.</p>
+</section>
+
+<script src="loader.js"></script>
+</body>
+</html>

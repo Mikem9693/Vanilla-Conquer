@@ -1,0 +1,42 @@
+{
+  "dataSource": "hosted",
+  "dataBaseUrl": "http://localhost:8001/packs/skirmish-v1/",
+  "packVersion": "skirmish-v1",
+  "files": [
+    {
+      "name": "MAIN.MIX",
+      "size": 6060518,
+      "sha256": "23af62de10144f074979f3fca7e167b748608657b85d580d160682a1fe70eb07"
+    },
+    {
+      "name": "REDALERT.MIX",
+      "size": 11650760,
+      "sha256": "421c2c8f092d1ed72d9c41292fabe333eb83c49a93d50fc8627855b9b51ad67f"
+    },
+    {
+      "name": "SCORES.MIX",
+      "size": 10386815,
+      "sha256": "7d4518e484069d85d300bcec30a187b7d727c91c263911e3b6ea89923c5022d9"
+    }
+  ],
+  "ownFiles": [
+    {
+      "name": "MAIN.MIX",
+      "size": 454605294,
+      "sha256": "512beab10095f2422498f16ce468fca613bf6bec2a6257bbc18a1d01691d1482",
+      "label": "allied"
+    },
+    {
+      "name": "MAIN.MIX",
+      "size": 500577414,
+      "sha256": "cbcddf7fc75b2924728a2698307b97605557528b99e5f175d3d5de8f6c96de3c",
+      "label": "soviet"
+    },
+    {
+      "name": "REDALERT.MIX",
+      "size": 25046328,
+      "sha256": "ad5ad68a08d1d6bb073324e91beb02543deeb9e1b8dca922f3cef768dda07b53",
+      "label": "allied"
+    }
+  ]
+}
