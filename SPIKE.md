@@ -1514,3 +1514,151 @@ scripts/make-skirmish-pack.sh ~/ra-data/full/allied/disc ~/ra-data/skirmish
 ### Hand-off (end of session 7)
 
 Files changed: `scripts/make-skirmish-pack.sh` (new), SPIKE.md, CLAUDE.md; not committed at the time of writing. `build-web/` untouched.
+
+## Session 8: Loader (15 Nov 2026)
+
+**Result: a release web build now starts with no game data, gets it either from a hosted pack or from the player's own files, checks it, keeps it in the browser's IndexedDB and then starts the game. Second visits download nothing. The wasm shrank from 4.9 MB to 0.8 MB gzipped by dropping debug info. A small engine change pauses single-player games while the browser tab is hidden. Deployment (Cloudflare Pages for the page, Cloudflare R2 for the data) is still to do.**
+
+Evidence labels: [obs] observed by running, [code] read from code, [inf] inferred, [est] estimate.
+
+### What was built
+
+Two local commits, not pushed:
+
+- `a52d9d2` "[RA] Web: hold single-player game while the browser tab is hidden": `redalert/conquer.cpp`, 10 lines (see "Hidden tab" below).
+- `25fdfb5` "Add web game-data loader and release build script": `web/index.html`, `web/loader.js`, `web/loader-config.json`, `scripts/build-web-release.sh`, `scripts/make-loader-config.py`, `scripts/serve-pack.py`.
+
+### Release build and file sizes
+
+`scripts/build-web-release.sh` builds into `build-release/` in about 30 s with 0 warnings and 0 errors [obs], then assembles `build-release/site/` (index.html, loader.js, loader-config.json, vanillara.js, vanillara.wasm). That folder is what gets uploaded later. There is no `.data` file any more; the script stops if one appears.
+
+- Compile: `-DCMAKE_BUILD_TYPE=WebRelease` with `-O2 -DNDEBUG`. Link: `-O2 -sINVOKE_RUN=0 -sEXPORTED_RUNTIME_METHODS=FS,callMain,requestFullscreen`. No `WEB_DATA_DIR`. No CMake file was edited.
+- Why a custom name "WebRelease": plain `Release` gets `-g` (debug info) added by `cmake/Compilers.cmake:31-33` [code]; a new build type name avoids that.
+- `INVOKE_RUN=0` means the game does not start by itself when the page loads; the loader starts it with `callMain` once data is in place.
+
+| File | Release raw | Release gzip -9 | Session 7 dev raw | Session 7 dev gzip -9 |
+|---|---:|---:|---:|---:|
+| vanillara.wasm | 2,778,028 | 822,050 | 14,293,059 | 4,887,575 |
+| vanillara.js | 217,638 | 54,621 | 455,640 | 102,569 |
+| Total | 2,995,666 | 876,671 | 14,748,699 | 4,990,144 |
+
+[obs], measured on the final build. The session 7 build had debug info. brotli is still not measured.
+
+### Loader config and how to regenerate it
+
+`web/loader-config.json` holds no game data, only the list of accepted files:
+
+- `dataSource`: "hosted" or "own-files-only". This is the setting that switches the hosted route off without code changes.
+- `dataBaseUrl`: where the pack lives; currently `http://localhost:8001/packs/skirmish-v1/`.
+- `packVersion`: "skirmish-v1". Changing it makes browsers download the pack again.
+- `files`: the three pack files with size and SHA-256 (a fingerprint of the file's bytes): MAIN.MIX 6,060,518; REDALERT.MIX 11,650,760; SCORES.MIX 10,386,815.
+- `ownFiles`: full original files the player may pick, each with a label: Allied MAIN.MIX 454,605,294; Soviet MAIN.MIX 500,577,414; REDALERT.MIX 25,046,328.
+
+The Allied and Soviet REDALERT.MIX are byte-identical (same SHA-256) [obs], which closes the session 7 open item. The single entry is labelled "allied"; that is cosmetic.
+
+Regenerate (usage comment in `scripts/make-loader-config.py`):
+
+```sh
+python3 scripts/make-loader-config.py ~/ra-data/skirmish skirmish-v1 \
+    http://localhost:8001/packs/skirmish-v1/ hosted \
+    allied=$HOME/ra-data/full/allied/disc/MAIN.MIX \
+    soviet=$HOME/ra-data/full/soviet/disc/MAIN.MIX \
+    allied=$HOME/ra-data/full/allied/disc/INSTALL/REDALERT.MIX \
+    soviet=$HOME/ra-data/full/soviet/disc/INSTALL/REDALERT.MIX
+```
+
+Arguments: pack folder, pack version, base URL, data source, then any number of `label=path` originals. Originals with the same name and hash are listed once.
+
+### How the loader works
+
+`web/loader.js` is plain JavaScript, 314 lines [obs]:
+
+1. Loads `vanillara.js` at once, so the wasm compiles while data arrives, and reads the config.
+2. Uses data already in IndexedDB if it was downloaded for this `packVersion`, or if stored own files are still on the accepted list.
+3. Otherwise downloads the hosted pack with a progress bar, or takes the player's files. Own files need MAIN.MIX + REDALERT.MIX, plus SCORES.MIX only with the pack MAIN.MIX (the full disc MAIN.MIX already contains the music).
+4. Checks each file's size, then its SHA-256 (`crypto.subtle`, the browser's built-in crypto).
+5. Saves to IndexedDB under keys like `pack:MAIN.MIX` or `allied:MAIN.MIX`, so both discs' MAIN.MIX can sit side by side later, and asks the browser for persistent storage (so it is not cleared under space pressure).
+6. Writes the files and a REDALERT.INI (Windowed=yes, RawInput=no, PlayIntro=no, MultiplayerScoreVolume=0.25) to `/` in Emscripten's in-memory file system, enables Play; the click calls `Module.callMain([])`.
+
+"Clear saved game data" deletes the database without reloading the page. If IndexedDB is unavailable, the loader carries on from memory and says the data will be needed again next visit.
+
+Page contract (header of `web/loader.js`): the script uses only these element IDs, so the page can be redesigned freely as long as they exist.
+
+| ID | Element | Role |
+|---|---|---|
+| `play` | button | starts the game; disabled until data is ready |
+| `progress` | progress | download progress; hidden when idle |
+| `status` | any text element | messages; `data-state` = working, ready or error |
+| `own-files` | input type=file multiple | player-supplied data files |
+| `clear-data` | button | deletes the saved data |
+| `canvas` | canvas tabindex=-1 | the game screen |
+
+The Fullscreen button in `index.html` is owned by the page (inline handler) and is not part of the contract.
+
+### How to run both test servers
+
+From the repo root, in two terminals, then open http://localhost:8000/ :
+
+```sh
+python3 -m http.server 8000 -d build-release/site
+python3 scripts/serve-pack.py ~/ra-data/skirmish
+```
+
+`serve-pack.py` stands in for R2: it serves the folder at `/packs/skirmish-v1/` on port 8001 with `Access-Control-Allow-Origin: http://localhost:8000`. That header is CORS: the browser's rule that a page may only fetch from another address if that address allows it. To try the own-files route, set `dataSource` to "own-files-only" in `build-release/site/loader-config.json` (the copy, not `web/`).
+
+The test rig (headless browser driver `drive.js`, `d.sh`, `pack.sh`) is kept in `build-release/probe-tools/` (git-ignored; never commit it).
+
+### Test results
+
+Worker B, headless Edge 157 driven over the DevTools protocol; all [obs]:
+
+| Test | Result |
+|---|---|
+| First visit, hosted | 3 GETs, ready at 1.6 s, Play reaches the menu; only console errors are favicon 404s |
+| Second visit | 0 GETs |
+| Clear, then reload | 3 GETs again |
+| Clear during download | no crash, no database left |
+| Truncated SCORES.MIX | "smaller than expected" |
+| One byte flipped | "damaged (checksum)" |
+| Both damaged | Play disabled, 0 records stored |
+| own-files-only | 0 requests to :8001; pack files reach the menu |
+| Full Allied MAIN.MIX + REDALERT.MIX | about 13.6 s from picking to ready, then the menu; renderer memory peak about 740 MB |
+| Stored own files, next visit | reload without picking |
+| Demo MAIN.MIX | rejected, with its SHA-256 shown |
+
+Damaged test copies are in `~/ra-data/session8/`. The owner then tested by hand: "when the tab is hidden the game freezes but then catches up on return (build progress jumps forward), so please make a hidden tab trigger the game's original focus-loss pause, web-only, and confirm the game clock no longer advances while hidden.All else runs correctly"
+
+Fixes made after the owner's test, tested headless only, not yet seen by the owner: a failed own-file pick re-enables Play when data was already ready; a running download is cancelled only after picked files pass verification; a `versionchange` handler closes the database so "clear data" from another tab no longer stalls.
+
+### Hidden tab: engine change
+
+There was no gameplay pause on focus loss to trigger [code]. SDL already turns tab hiding and window blur into `Focus_Loss()` (`common/wwkeyboard_sdl2.cpp:93-96`), which only sets `GameInFocus=false` and mutes sound (`redalert/winstub.cpp:79-86`); `Main_Loop()` only skips drawing and input (`redalert/conquer.cpp` near 1798). So JavaScript alone could not fix it. The worker stopped as the ticket required, and the owner approved an engine change on 15 Nov 2026.
+
+Change: in `Main_Loop()` after `Check_For_Focus_Loss();`, under `#ifdef __EMSCRIPTEN__`, a loop sleeps 250 ms at a time while `document.hidden` is true and the game is `GAME_NORMAL` or `GAME_SKIRMISH`, plus a guarded `#include "common/mssleep.h"`. Multiplayer is excluded: pausing one player would break the shared lockstep game.
+
+Test (worker D) [obs]: a tank ordered on a long move; the page hidden for 22 s by activating a second tab (`document.hidden` confirmed true); on return the tank was in the same spot within a pixel or two, and 5 s later it had arrived. With the page visible and only the window blurred, drawing freezes but the game keeps running, as before.
+
+### Decisions
+
+- Own files are strict: they must match a listed hash. The error shows the file's hash so the list can be extended.
+- The hosted download starts on page load.
+- The committed config points at localhost:8001; changing `dataBaseUrl` to the R2 address is a deploy step.
+- The Fullscreen button is page-owned.
+
+### Open items
+
+- clang-format is not installed here: the new `conquer.cpp` lines were formatted by hand and CI's clang-format 14 check has not been run on them.
+- Owner to confirm the hidden-tab pause in a real browser; multiplayer not tested with it.
+- The three post-test loader fixes need an owner check.
+- Soviet MAIN.MIX is hash-listed but not confirmed running in the browser. Other Red Alert editions are rejected by the strict list.
+- Untested: the no-IndexedDB path (private window, full quota) and browsers other than Edge.
+- The full-disc route holds about 740 MB in memory, probably too much for phones [inf].
+- Saved games are not kept between visits (follow-up ticket: keep the user folder in IndexedDB).
+- Deployment: R2 address in `dataBaseUrl`, CORS on R2 for the Pages origin, https.
+- Late-music loading (session 7) and brotli size are still open.
+
+Tips: plain `grep` here is ugrep and silently skips `redalert/conquer.cpp`; use `/usr/bin/grep`. Edge's debugging port listens only on the Windows side's 127.0.0.1, so the driver must run with Windows `node.exe`. Worker D found the owner's servers already running on :8000/:8001 and left them running.
+
+### Hand-off (end of session 8)
+
+Code commits `a52d9d2` and `25fdfb5`, then these notes; nothing pushed. Tree clean after the notes commit. `build-release/` (including `probe-tools/`) and `~/ra-data/session8/` are outside version control.

@@ -20,7 +20,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - The data source is a setting, so the hosted route can be switched off without code changes.
 - The full game has two `MAIN.MIX` files (Allied and Soviet discs) with the same name; the loader must handle both.
 - Rules (unchanged): no game data ever goes in this repo or in committed build output. The packaged demo in `build-web/` is for local testing only.
-- Not in scope yet: building the loader. It will be its own ticket in phase 2.
+- Loader built on 15 Nov 2026: `web/`, release build via `scripts/build-web-release.sh`; details in SPIKE.md "Session 8: Loader". Deployment and keeping saved games between visits are still to do.
 
 ## What this is
 
