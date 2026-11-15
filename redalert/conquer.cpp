@@ -85,6 +85,9 @@
 #include "common/vqaloader.h"
 #include "common/settings.h"
 #include "common/winasm.h"
+#ifdef __EMSCRIPTEN__
+#include "common/mssleep.h"
+#endif
 
 int RESFACTOR = 2;
 
@@ -1721,6 +1724,13 @@ bool Main_Loop()
     ** Call the focus loss handler
     */
     Check_For_Focus_Loss();
+#ifdef __EMSCRIPTEN__
+    /* Web: hold a single-player game still while the browser tab is hidden. */
+    while ((Session.Type == GAME_NORMAL || Session.Type == GAME_SKIRMISH) && EM_ASM_INT({ return document.hidden; })) {
+        ms_sleep(250);
+        Check_For_Focus_Loss();
+    }
+#endif
 
     /*
     ** Allocate extra memory for uncompressed shapes as needed
