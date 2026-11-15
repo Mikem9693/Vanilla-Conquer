@@ -1645,11 +1645,20 @@ Test (worker D) [obs]: a tank ordered on a long move; the page hidden for 22 s b
 - The committed config points at localhost:8001; changing `dataBaseUrl` to the R2 address is a deploy step.
 - The Fullscreen button is page-owned.
 
+### After the owner's second test
+
+The owner, verbatim: "All appears to work - after exiting game refresh is still needed to play again"
+
+Then, verbatim: "Exit and play is not a fix required now"
+
+"All appears to work" covers the hidden-tab pause in a real browser and the three post-test loader fixes.
+By the owner's decision, exit-and-replay was not changed: `web/loader.js` is still as committed in `25fdfb5`.
+
 ### Open items
 
 - clang-format is not installed here: the new `conquer.cpp` lines were formatted by hand and CI's clang-format 14 check has not been run on them.
-- Owner to confirm the hidden-tab pause in a real browser; multiplayer not tested with it.
-- The three post-test loader fixes need an owner check.
+- Multiplayer not tested with the hidden-tab pause.
+- After "Exit Game" the page must be refreshed to play again. A second `callMain` in the same page is not safe, because the program's globals are not reset. The likely fix is an automatic page reload that loads the data from browser storage.
 - Soviet MAIN.MIX is hash-listed but not confirmed running in the browser. Other Red Alert editions are rejected by the strict list.
 - Untested: the no-IndexedDB path (private window, full quota) and browsers other than Edge.
 - The full-disc route holds about 740 MB in memory, probably too much for phones [inf].
@@ -1661,4 +1670,4 @@ Tips: plain `grep` here is ugrep and silently skips `redalert/conquer.cpp`; use 
 
 ### Hand-off (end of session 8)
 
-Code commits `a52d9d2` and `25fdfb5`, then these notes; nothing pushed. Tree clean after the notes commit. `build-release/` (including `probe-tools/`) and `~/ra-data/session8/` are outside version control.
+Code commits `a52d9d2` and `25fdfb5`, then notes commits `4e1702a` and "Notes: session 8 owner confirmation"; nothing pushed. Tree clean after the notes commit. `build-release/` (including `probe-tools/`) and `~/ra-data/session8/` are outside version control.
