@@ -1917,7 +1917,7 @@ Code commits `e9beded`, `f20545d`, `6d1324c`, `3325117`, then the notes commit "
 
 ## Session 10: Multiplayer checks (16 Nov 2026)
 
-**Result:** Create game failed only because the relay (the small server that passes messages between players) was not running; it was not a code bug. A new script, `scripts/start-local-mp.sh`, now starts all three local servers. With the relay up, a pair of screenshots taken at the same moment shows both players in one shared game, seeing the same units at the same map spots, which closes the "cross-screen visibility" item from sessions 9A and 9B. A 3-player match then ran for about 6 minutes with no out-of-sync box, no waiting dialog and no console errors.
+**Result:** Create game failed only because the relay (the small server that passes messages between players) was not running; it was not a code bug. A new script, `scripts/start-local-mp.sh`, now starts all three local servers. With the relay up, a pair of screenshots taken at the same moment shows both players in one shared game, seeing the same units at the same map spots, which closes the "cross-screen visibility" item from sessions 9A and 9B. A 3-player match then ran for about 6 minutes with no out-of-sync box, no waiting dialog and no console errors. The owner's own test then passed with two real players and one computer player.
 
 ### Why Create game failed
 
@@ -1953,16 +1953,25 @@ Code commits `e9beded`, `f20545d`, `6d1324c`, `3325117`, then the notes commit "
 - End shots: `m3-end-9333.png`, `m3-end-9334.png`, `m3-end-9335.png`.
 - Frame rate was not measured: the frame counter address in the rig is stale for this build.
 
+### The owner's own test (16 Nov 2026)
+
+Reported by the owner after the relay was started; not seen by a worker.
+
+- Two real players (Russia and Ukraine) plus one computer-controlled player (an Allied side) in one match, using the Create game / invite link flow.
+- The game ran well. Movements were tracked on both screens and units interacted correctly.
+- This is the first match with a computer player in it, and the first cross-screen check made in real, visible browser windows.
+- Not stated by the owner: which map, how long the match ran, and whether the two windows were on one machine or two.
+
 ### Not run / not proven
 
 - 4 players (skipped to save budget).
 - Frame rate in multiplayer.
-- Visible windows, two real machines, a remote relay.
+- Two real machines, a remote relay. (Visible windows: covered by the owner's own test.)
 - Whether the first 2-player attempt was a desync.
 
 ### Open items
 
-- The owner's own two-window test of the Create/Join flow, to be repeated now the relay is up.
+- Done (16 Nov 2026): the owner's own two-window test of the Create/Join flow passed; see "The owner's own test" above.
 - First 2-player attempt ended early; cause not established.
 - B's MCV would not deploy in the second attempt; cause not established (may be the test's click, or blocked ground).
 - Choose a host and deploy the relay with `wss://` (the encrypted WebSocket, needed on https pages).
@@ -1983,4 +1992,4 @@ Code commits `e9beded`, `f20545d`, `6d1324c`, `3325117`, then the notes commit "
 
 ### Hand-off
 
-Commits `cca8ba6`, then the notes commit "Notes: session 10 multiplayer checks"; nothing pushed. The relay (8002), site (8000) and data (8001) servers were left running for the owner's two-window test. The headless Edge instances were closed.
+Commits `cca8ba6`, then the notes commits "Notes: session 10 multiplayer checks" and "Notes: session 10 owner's test passed"; nothing pushed. The relay (8002), site (8000) and data (8001) servers were left running for the owner's two-window test. The headless Edge instances were closed.
