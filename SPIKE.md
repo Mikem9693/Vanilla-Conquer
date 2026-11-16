@@ -1745,6 +1745,8 @@ Edge default throttling (the browser slowing timers in background tabs); the joi
 
 Node is not on PATH in WSL; use Emscripten's bundled Node (it has npm). Four terminals from the repo root:
 
+Since session 10, `scripts/start-local-mp.sh` starts all three servers (relay, site, data) in one go and skips any that are already running; the four commands below are what it runs.
+
 ```
 cd relay && PATH=~/emsdk/node/24.19.0_64bit/bin:$PATH npm install     # once
 HOST=127.0.0.1 PORT=8002 ~/emsdk/node/24.19.0_64bit/bin/node relay/server.js
@@ -1752,7 +1754,7 @@ python3 -m http.server 8000 -d build-release/site
 python3 scripts/serve-pack.py ~/ra-data/skirmish
 ```
 
-The relay must be started by hand with the second command above. Then (updated for stage B; the `?room=TEST01` address no longer creates a room):
+The relay must be running before Create game will work; `scripts/start-local-mp.sh` (or the second command above) starts it. Then (updated for stage B; the `?room=TEST01` address no longer creates a room):
 
 1. Open `http://localhost:8000/` in two browser windows (not two tabs in one window, or one gets throttled).
 2. In one window press Create game and copy the invite link.
@@ -1912,3 +1914,73 @@ Two headless Edge instances on one machine, all [obs]:
 #### Hand-off
 
 Code commits `e9beded`, `f20545d`, `6d1324c`, `3325117`, then the notes commit "Notes: session 9 multiplayer stage B"; nothing pushed. Tree clean after the notes commit. The site and data servers on ports 8000/8001 were left running (not started by this session's workers). No relay is running.
+
+## Session 10: Multiplayer checks (16 Nov 2026)
+
+**Result:** Create game failed only because the relay (the small server that passes messages between players) was not running; it was not a code bug. A new script, `scripts/start-local-mp.sh`, now starts all three local servers. With the relay up, a pair of screenshots taken at the same moment shows both players in one shared game, seeing the same units at the same map spots, which closes the "cross-screen visibility" item from sessions 9A and 9B. A 3-player match then ran for about 6 minutes with no out-of-sync box, no waiting dialog and no console errors.
+
+### Why Create game failed
+
+- [obs] The owner pressed Create game and got "Could not connect to the multiplayer server. Check your connection and try again."
+- [obs] Ports 8000 (site) and 8001 (data) were listening; nothing was on 8002, so the relay was not running.
+- [obs] The page config was correct: `"multiplayer": "on"`, `relayUrl` empty (empty means "use the local relay").
+- Not a code bug: session 9 ended with no relay running (see its hand-off).
+
+### Start-up script
+
+- Commit `cca8ba6` "Scripts: start local multiplayer servers": one new file, `scripts/start-local-mp.sh` (27 lines, executable). It was first committed as `b3d6332`; the conductor amended the message to restore the agreed co-author line.
+- [obs] It started the relay on 8002 and skipped the site (8000) and data (8001) servers, which were already up. Logs go to `/tmp/vc-*.log`.
+- [obs] It prints the relay's health check (a status address that answers "am I alive"): `{"ok":true,"rooms":0,"clients":0}`.
+- [obs] Conductor's check: the commit holds only that file; tree clean.
+- [obs] `mp-create` (the Create game button) then gave room 2CLFNL, the invite link and `data-state="ready"`.
+
+### One shared game: the proof
+
+- [obs] 2 players on "Keep off the Grass (Sm)", crates off. Each screenshot pair was taken at the same moment. The two views differ only by a 22-pixel scroll, checked against a wall corner and a gem field.
+- [obs] `pairBA-B.png`: B's screen shows A's Construction Yard, tank and rifleman.
+- [obs] `pairBA-A.png`: the same three at the same map spots on A's screen. A's yard was the only building; B's MCV would not deploy.
+- [obs] The conductor opened both files and saw the same gold Construction Yard, tank and rifleman beside the same wall corner and gem field, with B's blue units also in view on both.
+- [obs] Other direction: `r2-A7zoom.png` / `r2-B7zoom.png` show B's grenadier beside the wall corner, same spot on both screens.
+- [obs] A first attempt (`s3-*.png`) was confusing: A's units vanished, then A got "Mission failed" and B a score screen.
+- [inf] One side losing while the other sees the score screen is what a normal win/lose looks like in one shared game. Whether it was a desync (the two games drifting apart) or just combat was not checked.
+- Shots are in `build-release/probe-tools/shots/`, which is git-ignored and not part of the repo.
+
+### 3-player match
+
+- [obs] 3 pages (ports 9333/9334/9335), room VJG8VQ, about 6 minutes, 5 rounds of move orders from every player.
+- [obs] On every page: no out-of-sync box, no waiting or reconnect dialog, 0 console errors (only missing-favicon 404s, which are harmless).
+- [obs] Each panel read "3 players connected. The game has started and the room is closed to new players."
+- End shots: `m3-end-9333.png`, `m3-end-9334.png`, `m3-end-9335.png`.
+- Frame rate was not measured: the frame counter address in the rig is stale for this build.
+
+### Not run / not proven
+
+- 4 players (skipped to save budget).
+- Frame rate in multiplayer.
+- Visible windows, two real machines, a remote relay.
+- Whether the first 2-player attempt was a desync.
+
+### Open items
+
+- The owner's own two-window test of the Create/Join flow, to be repeated now the relay is up.
+- First 2-player attempt ended early; cause not established.
+- B's MCV would not deploy in the second attempt; cause not established (may be the test's click, or blocked ground).
+- Choose a host and deploy the relay with `wss://` (the encrypted WebSocket, needed on https pages).
+- If the connection drops during a match, the game itself is not told; only the page shows it [code].
+- A player who drops out of a started match cannot rejoin, because the room is locked.
+- The panel sits below the game and needs scrolling on a small window. Layout is the owner's call.
+- Hidden for more than 5 minutes, and a hidden host: still not run.
+- Latency through a remote relay not measured.
+- Carried over from stage A: the yield's effect on frame rate not isolated; clang-format check not run on `common/wspudp_web.cpp`.
+- Done: cross-screen visibility of the other player's units (see "One shared game: the proof").
+
+### Rig notes
+
+- `d3.sh` saves screenshots to `shots/`; `mpstart2.sh` / `mp3.sh` start 2- and 3-player matches.
+- Arrow keys don't scroll the map; screen-edge mouse scrolling does, very fast.
+- In `drive2.js`, `key=` digits don't type.
+- The frame counter address (wasm 405664) is stale for this build.
+
+### Hand-off
+
+Commits `cca8ba6`, then the notes commit "Notes: session 10 multiplayer checks"; nothing pushed. The relay (8002), site (8000) and data (8001) servers were left running for the owner's two-window test. The headless Edge instances were closed.

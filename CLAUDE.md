@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - The full game has two `MAIN.MIX` files (Allied and Soviet discs) with the same name; the loader must handle both.
 - Rules (unchanged): no game data ever goes in this repo or in committed build output. The packaged demo in `build-web/` is for local testing only.
 - Loader built on 15 Nov 2026: `web/`, release build via `scripts/build-web-release.sh`; details in SPIKE.md "Session 8: Loader". Deployment and keeping saved games between visits are still to do.
-- Multiplayer iteration 1 (relay rooms + Create/Join panel) works locally as of 16 Nov 2026, branch `multiplayer`. The relay is not hosted yet. Details in SPIKE.md "Session 9".
+- Multiplayer iteration 1 (relay rooms + Create/Join panel) works locally as of 16 Nov 2026, branch `multiplayer`. The relay is not hosted yet. Details in SPIKE.md "Session 9". On 16 Nov 2026 a screenshot pair confirmed both players see the same units, a 3-player match ran clean, and `scripts/start-local-mp.sh` starts the local servers; details in SPIKE.md "Session 10".
 
 ## What this is
 
