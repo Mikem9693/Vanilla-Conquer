@@ -1,47 +1,41 @@
-# Vanilla Conquer Skirmish in browser (Unofficial)
+# Vanilla Conquer Skirmish in Browser (Unofficial)
 
-A WebAssembly port of Command & Conquer: Red Alert, built on
-[Vanilla Conquer](https://github.com/TheAssemblyArmada/Vanilla-Conquer).
+A WebAssembly build of [Vanilla Conquer](https://github.com/TheAssemblyArmada/Vanilla-Conquer)
+that runs the classic Red Alert (1996) game data in a desktop browser.
 
-**Play:** https://PROJECT-NAME.pages.dev (desktop browsers)
+**Play:** coming soon
 
 ## Status
 - Skirmish against the AI: playable
 - Multiplayer (private rooms by invite link): in development
-- Campaigns: TBD
+- Campaigns: planned
 
-## What this fork changes
-Small, contained changes to run in a browser, engine itself stays
-close to upstream:
-- Web build settings (Emscripten, Asyncify) in CMakeLists.txt
-- Waits hand control back to the browser (common/mssleep.h)
-- Hidden-tab handling uses the game's original focus-loss pause
-- A fix for a crash in the original game code (redalert/drive.cpp)
-- A browser loader and page (web/) and a data-pack script (scripts/)
-
-Full details and reasoning: SPIKE.md (development log).
-
-## Game data
-This repository contains **no game data**. The game needs data from EA's
-2008 freeware release of Red Alert. The hosted version downloads a small
-skirmish pack automatically, or players can load their own files.
-`scripts/make-skirmish-pack.sh` builds the pack from the original files.
-
-## Building
-- Native: see the original instructions below
-- Web: see "Building for the web" in SPIKE.md
+## Changes from Vanilla Conquer
+This is a modified version of Vanilla Conquer, changed by Mikem9693 in
+2026 (first changes November 2026). Main changes:
+- Browser build with Emscripten (WebAssembly), including a fix for the
+  game freezing when the window loses focus
+- Intro and cutscene movies skipped in the browser build
+- Fixes for a crate-related crash and a music loop hang
+- Fullscreen fix with whole-number scaling
+- The game holds while the browser tab is hidden
+- Web loader: uses hosted game data or the player's own files, cached
+  in the browser and checked with SHA-256
 
 ## Licence and credits
-GPL v3, as upstream. Based on EA's GPL source release of Red Alert and
-the Vanilla Conquer project by The Assembly Armada. Not affiliated with
-or endorsed by Electronic Arts. Command & Conquer and Red Alert are
-trademarks of Electronic Arts.
+Free software under the GNU General Public License v3, including the
+additional terms from Electronic Arts' source release (see LICENSE).
 
-Developed with an AI coding assistant (Claude Code), with every change
-reviewed.
+- Original source code: Electronic Arts
+- Engine: Vanilla Conquer, by The Assembly Armada
+- Browser port, loader and scripts: Mikem9693
 
-## Note
-This has been built as a personal learning project, please reach out with anything found in the repo you think could be done better.
+Unofficial project, not affiliated with or endorsed by Electronic Arts or
+The Assembly Armada. Command & Conquer and Red Alert are trademarks of
+Electronic Arts; no trademark rights are granted or claimed.
+
+This repository contains no game data. Game content remains the property
+of Electronic Arts.
 
 ---
 *Original Vanilla Conquer README follows.*
