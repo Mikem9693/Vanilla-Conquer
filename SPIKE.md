@@ -1676,7 +1676,7 @@ Code commits `a52d9d2` and `25fdfb5`, then notes commits `4e1702a` and "Notes: s
 
 **Result: stage A of multiplayer works locally. Two browser pages joined the same room through a small relay, met in the game's own Network lobby and played one match on A Path Beyond for about 15 minutes with no out-of-sync box, no waiting dialog and no console errors. "Same game on both pages" rests on matching frame counters and the absence of the out-of-sync box: neither page was seen showing the other player's units. Tested only in headless Edge on one machine with two players. Hiding a tab for up to 30 s was harmless; at 60 s the game slowed to a crawl for both players but nobody was dropped.**
 
-**Stage B has NOT started. It waits for the owner's own two-window test and approval.**
+**Stage B result (16 Nov 2026): the page now has a multiplayer panel. One player presses Create game and shares an invite link; the other opens the link and joins. Both then meet in the game's own Network lobby as before. The relay has room rules (create or join on purpose, rooms close to new players at game start) and limits against abuse, plus a health check; it is ready to host but not deployed. Tested in two headless Edge instances on one machine: a match ran about 7 minutes with no out-of-sync box, no waiting dialog and no console errors; a late join to the started room was refused. As in stage A, neither page was seen showing the other player's units.**
 
 Evidence labels: [obs] observed by running, [code] read from code, [inf] inferred, "not run" where nothing was tried.
 
@@ -1752,7 +1752,15 @@ python3 -m http.server 8000 -d build-release/site
 python3 scripts/serve-pack.py ~/ra-data/skirmish
 ```
 
-Then open two browser windows (not two tabs in one window, or one gets throttled) at `http://localhost:8000/?room=TEST01`; any 4-32 letters/digits work as the room. In the game: Multiplayer Game, Network; one player picks "New", the other joins the listed game; the host starts it. Relay self-test: `~/emsdk/node/24.19.0_64bit/bin/node relay/test.js`. The test worker started `server.js` by hand with the command above [obs]. At the end of the session a relay was still listening on 127.0.0.1:8002 (pid 60273); the web servers on 8000/8001 were stopped.
+The relay must be started by hand with the second command above. Then (updated for stage B; the `?room=TEST01` address no longer creates a room):
+
+1. Open `http://localhost:8000/` in two browser windows (not two tabs in one window, or one gets throttled).
+2. In one window press Create game and copy the invite link.
+3. Open the invite link in the other window.
+4. In both windows press Play, then Multiplayer Game, Network.
+5. One player picks "New", the other joins the listed game; the host starts it.
+
+Relay self-test: `~/emsdk/node/24.19.0_64bit/bin/node relay/test.js`. The relay left running after stage A (pid 60273) was stopped on 16 Nov.
 
 Test rig (git-ignored, `build-release/probe-tools/`): `drive2.js` (two-page driver: cropped screenshots, drag, pixel-change watch, window resize, raw devtools commands), `d2.sh`, `edge2.sh`, `edge3.sh`, `monitor.js`, `hide.js`, `throttle.js`, `trial.sh`, `mpstart.sh`, `killedge.ps1`. Caveats: the frame counter address (wasm 405664) is good for this build only; two screenshots at once on one page left it stuck at 640x400 until the window was resized (a test setup problem, not the game).
 
@@ -1771,15 +1779,136 @@ The conductor's; the owner may overrule:
 
 ### Open items
 
-- The owner's own two-window test (the gate).
+- Done (16 Nov 2026): the owner's own two-window test (the gate) passed.
 - `Close_Socket` is not overridden, so the WebSocket closes only when the object is destroyed or the socket reopened.
 - Relay join/leave messages are ignored by the game side.
 - The yield's effect on frame rate is not isolated (20.8 fps in the match vs 21 in skirmish).
 - Cross-screen visibility of the other player's units not confirmed.
 - Hidden for over 5 minutes, and a hidden host: not run.
 - clang-format check not run on `common/wspudp_web.cpp`.
-- Stage B items 5-8 not started: room rules, page flow with agreed element IDs, hidden-tab policy, relay ready to host.
+- Done in stage B (16 Nov 2026): stage B items 5-8 (room rules, page flow with agreed element IDs, hidden-tab policy, relay ready to host). See "Stage B" below.
 
 ### Hand-off (stage A gate)
 
 Code commits `e2d0ba3` and `6fabed4`, then the notes commit "Notes: session 9 multiplayer stage A"; nothing pushed. Tree clean after the notes commit. Next step: the owner's own test. Stage B only on the owner's approval.
+
+### Stage B (16 Nov 2026)
+
+Gate: on 16 Nov 2026 the owner reported that their own two-window test of stage A passed, and approved a written plan for stage B.
+
+Method: conductor plus Opus workers. Three workers (relay, game side, page) worked in parallel to one fixed contract, then one test worker, then this notes worker.
+
+#### Decisions
+
+The owner's (16 Nov 2026):
+
+- Hidden-tab policy: a notice only, no engine change.
+- Page flow: a Create/Join panel on the page, then the game's own Network lobby.
+- Relay hosting: prepare only. Nothing is deployed and no host is chosen.
+
+The conductor's; the owner may overrule:
+
+- The page opens the connection and the game adopts it. So errors such as "no such room" show on the page before the game starts.
+- Rooms close to new players at game start.
+- Commits carry the Fable 5.2 co-author line, though Opus workers wrote the code (the owner was told).
+
+#### What was built
+
+Four local commits, not pushed:
+
+- `e9beded` "Relay: stage B room rules, limits, health check, hosting notes".
+- `f20545d` "[RA] Web: game adopts the page's relay connection, signals game start".
+- `6d1324c` "Web: multiplayer Create/Join panel and hidden-tab notice".
+- `3325117` "Web: room code box accepts typing while the game runs".
+
+Relay [code]: `relay/server.js` is now 245 lines and `relay/test.js` 265 lines. New `relay/README.md` (77 lines) covers environment variables (settings passed to a program when it starts), close codes, what is logged, and hosting notes. The hosting notes are untested.
+
+- Limits, all in `RULES`, each settable by an environment variable: MAX_ROOMS 200; MAX_CLIENTS 800; MAX_PER_IP 16 (counted in memory, never logged; `TRUST_PROXY=1` reads the first `X-Forwarded-For` entry, for when the relay sits behind a proxy); MSGS_PER_SEC 600 and BYTES_PER_SEC 262144 per client (excess is dropped; 5 s over the limit closes with 4007; text frames count too); IDLE_MS 30 min; ROOM_MAX_AGE_MS 12 h (the room is removed at once, so its code can be reused); ALLOWED_ORIGINS (a list of web sites allowed to connect; empty = any, otherwise others get HTTP 403).
+- A ping every 30 s drops dead connections.
+- `GET /health` returns `{"ok":true,"rooms":N,"clients":N}`, so a host can check the relay is alive.
+- SIGTERM/SIGINT (the stop signals) close all sockets and exit.
+- Logging is still counts only.
+- Worker's deviations from the contract: server state lives inside `start()`, so tests can run several small servers; `start()` takes overrides as a fourth argument; three extra test-only rules have no environment variable (`tickMs` 1000, `pingMs` 30000, `overLimitSecs` 5); MAX_CLIENTS maps to `RULES.maxTotalClients`.
+
+Game side [code]: `common/wspudp_web.cpp` 40 insertions, 74 deletions.
+
+- The page sets `Module.vcnetPre = { ws, id, room }`: a WebSocket that is already open and has had the relay's hello.
+- The game adopts it when the player enters Multiplayer Game > Network. It adds one listener with `addEventListener` (the flag `ws.vcnetListening` stops a second one) and never closes the page's socket.
+- The game no longer connects by itself: the `?room=` parsing, `Module.relayUrl` and the wait-for-hello loop are gone.
+- With no room, `Open_Socket` returns false and logs "vcnet: not in a room; use Create game or Join game on the page". Ids outside 1..254 are refused.
+- Unchanged: 10.0.0.N addresses, broadcast to 0, own-frame drop, 4096-frame queue cap, 1 ms yield.
+- `redalert/init.cpp` +7 lines, web build only: at line 969, in `Select_Game`'s network branch, after `Remote_Connect()` returns true, it calls `Module.onNetGameStart()`. This runs on the host and on joiners.
+- Release build: 0 errors [obs].
+
+Page [code]:
+
+- New `web/multiplayer.js` (201 lines, plus 4 for the typing fix). `web/index.html` +14 lines (the panel). `web/loader.js` +4 lines: it calls `window.vcMultiplayerInit(config, Module)` once the config is read.
+- `web/loader-config.json` has two new settings: `"multiplayer": "on"` or `"off"` (off hides the panel and nothing connects), and `"relayUrl": ""` (empty = `ws://<page host>:8002`, or `wss://` on https pages).
+- `scripts/make-loader-config.py` carries both settings over when it regenerates the config (missing = `"off"` and `""`). Not run, because it needs the original data files.
+- `scripts/build-web-release.sh` now copies `multiplayer.js` into the site.
+
+Element IDs the script uses:
+
+| ID | What it is |
+|---|---|
+| `mp-panel` | container for the panel |
+| `mp-create` | Create game button |
+| `mp-code` | text box for a room code |
+| `mp-join` | Join game button |
+| `mp-leave` | Leave button |
+| `mp-link` | read-only invite link |
+| `mp-copy` | button that copies the link |
+| `mp-status` | status text; `data-state` is idle, working, ready or error |
+| `mp-notice` | hidden-tab notice |
+
+Behaviour:
+
+- Create makes a 6-character code from letters and digits, leaving out characters that look alike. If the code is taken it retries once.
+- Join by a typed code (Enter works), or automatically when arriving by an invite link `…/?room=CODE`.
+- The player count comes from the relay's hello/join/leave messages.
+- Each close code, and a dropped connection, gets a plain message.
+- At game start the page sends the lock.
+- Hidden-tab notice: a permanent "keep this tab visible" line. While in a room the tab title changes when the tab is hidden. After more than 10 s hidden, a notice on return says for how long.
+
+#### Protocol v1
+
+Changes from v0 [code]; game data forwarding is unchanged:
+
+- Connect `…/?room=CODE&mode=create|join`. Codes are case-insensitive.
+- `mode=create` needs a new room, else close code 4002. `mode=join` needs an existing room, else 4003. No mode = join-or-create, as in stage A.
+- A client text frame `{"t":"lock"}` marks the room started. Everyone gets `{"t":"locked"}`. Later joins are refused with 4004.
+- New close codes: 4005 relay full; 4006 idle or room expired; 4007 sending too fast. 4000 and 4001 are unchanged.
+
+#### Test results
+
+Relay tests: 34 of 34 passed, the 15 stage A tests unchanged [obs].
+
+Two headless Edge instances on one machine, all [obs]:
+
+- Create gave a code, a link and "1 player connected".
+- A made-up code gave "There is no room with that code…".
+- Page 2 joined by the link and both showed "2 players connected".
+- Both reached the Network lobby; the host chose New, the joiner "bob" joined, the host started.
+- Both pages then said the room is closed. A Node script joining with `mode=join` was closed with 4004.
+- The match ran about 7 minutes with orders on both sides: no out-of-sync box, no waiting dialog, 0 console errors. Both screens kept changing (17 and 18 pixel changes in 6 s).
+- Hidden 15 s: the title changed, the notice said "hidden for 15 seconds", and the match continued.
+- Skirmish with no room started and ran.
+- With `"multiplayer": "off"` the panel was hidden and Skirmish started.
+- First run failed one check: with the game running, typing in `mp-code` showed nothing, because the engine takes the keyboard. Fixed in `3325117` by stopping key events on `mp-code` and `mp-link` from reaching the game (4 lines). Re-test: typed characters appeared, Enter gave the no-room message, and Escape on the canvas still opened the game's Options menu.
+- NOT seen (same as stage A): one player's units on the other player's screen.
+- Not run: visible windows, two real machines, more than 2 players, a remote relay, the README's hosting steps, clang-format on the C++ file.
+
+#### Open items
+
+- The owner's own test of the new flow.
+- Choose a host and deploy the relay with `wss://` (the encrypted WebSocket, needed on https pages).
+- If the connection drops during a match, the game itself is not told; only the page shows it [code].
+- A player who drops out of a started match cannot rejoin, because the room is locked. Rejoin was outside stage B.
+- The panel sits below the game and needs scrolling on a small window. Layout is the owner's call.
+- Hidden for more than 5 minutes, and a hidden host: still not run.
+- Latency through a remote relay not measured.
+- Carried over from stage A: cross-screen visibility of the other player's units not confirmed; the yield's effect on frame rate not isolated; clang-format check not run on `common/wspudp_web.cpp`.
+
+#### Hand-off
+
+Code commits `e9beded`, `f20545d`, `6d1324c`, `3325117`, then the notes commit "Notes: session 9 multiplayer stage B"; nothing pushed. Tree clean after the notes commit. The site and data servers on ports 8000/8001 were left running (not started by this session's workers). No relay is running.
