@@ -1,6 +1,18 @@
 # Spike notes: Red Alert in the browser
 
-Branch `spike/web`, based on commit `ce83b59`.
+Branch `browser` (originally `spike/web`), based on upstream commit `ce83b59`.
+
+> **About this log.** This is the development log for the browser port, written session by session as the work happened, so earlier sections may be superseded by later ones; read the latest session for the current state. "Owner" is the project owner; "conductor" and "workers" are the Claude Code session and its sub-agents, which did the engineering under the owner's direction. Evidence labels used in later sessions: [obs] observed by running, [code] read from code, [inf] inferred, [est] estimate. Paths such as `/home/user/...` refer to the owner's machine.
+
+## Change footprint (16 Nov 2026)
+
+Measured on the `browser` branch against upstream `vanilla`, excluding this log and `CLAUDE.md`:
+
+```sh
+git diff --shortstat vanilla browser -- . ':!SPIKE.md' ':!CLAUDE.md'
+```
+
+Result: **15 files changed, 798 insertions, 8 deletions** [obs]. This includes the web loader and page (`web/`) and the helper scripts (`scripts/`), as well as the engine and build changes. Multiplayer (branch `multiplayer`) is not included.
 
 ## Ticket 1: Native build (phase 0 gate)
 
@@ -39,7 +51,7 @@ One-time setup: tell the game where the data is, and to run in a window. This fi
 mkdir -p ~/.config/vanilla-conquer/vanillara
 cat > ~/.config/vanilla-conquer/vanillara/redalert.ini <<'EOF'
 [Paths]
-DataPath=/home/mikem93/ra-data/demo
+DataPath=/home/user/ra-data/demo
 
 [Video]
 Windowed=yes
@@ -342,7 +354,7 @@ python3 build-web/probe-tools/probe_server.py build-web build-web/probe-tools/pr
 # Headless Edge from WSL with a throwaway profile. script= steps are milliseconds:action
 # (shot-NAME, mouse@X@Y, blur, focus, hide, show). watchdog=3000 records the C++ stack after 3 s without a yield.
 timeout 32 "/mnt/c/Program Files (x86)/Microsoft/Edge/Application/msedge.exe" --headless=new \
-  '--user-data-dir=C:\Users\mikem\AppData\Local\Temp\vc-probe' --no-first-run --window-size=900,700 \
+  '--user-data-dir=C:\Users\user\AppData\Local\Temp\vc-probe' --no-first-run --window-size=900,700 \
   --disable-backgrounding-occluded-windows --disable-renderer-backgrounding --disable-background-timer-throttling \
   "http://localhost:8001/probe.html?run=t1&watchdog=3000&script=3000:shot-03s,6000:mouse@320@200,7000:shot-07s"
 ```
@@ -479,7 +491,7 @@ Data used: the Allied disc of the 2008 freeware release, in `~/ra-data/full/alli
   - `REDALERT.MIX -> ~/ra-data/full/allied/disc/INSTALL/REDALERT.MIX`
 
   The game's file lookup works through the links (observed).
-- **Config file:** in `~/.config/vanilla-conquer/vanillara/redalert.ini` only the `DataPath` line changed, from `/home/mikem93/ra-data/demo` to `/home/mikem93/ra-data/skirmish-full` (a one-line diff). The old file is kept beside it as `redalert.ini.demo-backup`. To go back to the demo data, restore that line or the backup.
+- **Config file:** in `~/.config/vanilla-conquer/vanillara/redalert.ini` only the `DataPath` line changed, from `/home/user/ra-data/demo` to `/home/user/ra-data/skirmish-full` (a one-line diff). The old file is kept beside it as `redalert.ini.demo-backup`. To go back to the demo data, restore that line or the backup.
 
 #### Commands
 
@@ -493,7 +505,7 @@ cmake --build build -j16
 # In ~/.config/vanilla-conquer/vanillara/: keep a copy of the INI (-p keeps its date),
 # then point DataPath at the new folder. \r is there because the file has Windows line endings.
 cp -p redalert.ini redalert.ini.demo-backup
-sed -i 's|^DataPath=/home/mikem93/ra-data/demo\r$|DataPath=/home/mikem93/ra-data/skirmish-full\r|' redalert.ini
+sed -i 's|^DataPath=/home/user/ra-data/demo\r$|DataPath=/home/user/ra-data/skirmish-full\r|' redalert.ini
 
 # Smoke test: start the game and stop it after 20 seconds.
 timeout 20 ./build/vanillara
@@ -735,7 +747,7 @@ How it was made: unpacked with `vanillamix -x` into `~/ra-data/allied-extract/` 
 XDG_CONFIG_HOME=~/ra-data/smoke-min/config timeout 20 build-tools/vanillara
 ```
 
-That folder's `vanilla-conquer/vanillara/REDALERT.INI` sets `DataPath=/home/mikem93/ra-data/skirmish-min`, `Windowed=yes` and `RawInput=no`. `XDG_CONFIG_HOME` is the standard Linux variable for where programs keep settings; the game uses it for its per-user folder (`Get_Posix_Default`, `common/paths_posix.cpp:91`, used at `:203`).
+That folder's `vanilla-conquer/vanillara/REDALERT.INI` sets `DataPath=/home/user/ra-data/skirmish-min`, `Windowed=yes` and `RawInput=no`. `XDG_CONFIG_HOME` is the standard Linux variable for where programs keep settings; the game uses it for its per-user folder (`Get_Posix_Default`, `common/paths_posix.cpp:91`, used at `:203`).
 
 Observed:
 
@@ -1010,7 +1022,7 @@ Not blocking:
 
 ### Hand-off (end of session 4a)
 
-State: two files changed and **not committed**: `CMakeLists.txt` (one web-only line, `MultiplayerScoreVolume=0.25` in the generated INI) and `SPIKE.md` (checked with `git status --short`). No test servers or `vc-probe` Edge processes are running. `build-web/` holds the exact build that crashed: do not rebuild it until the reproduction below no longer needs its addresses. Scratch copies of that `.wasm` and `.js`, the disassembly and small reader scripts are in `/tmp/claude-1000/-home-mikem93-dev-Vanilla-Conquer/f26f9b24-7aba-4407-9069-001a0eee74f0/scratchpad/crash-4a/`, which may not survive a restart.
+State: two files changed and **not committed**: `CMakeLists.txt` (one web-only line, `MultiplayerScoreVolume=0.25` in the generated INI) and `SPIKE.md` (checked with `git status --short`). No test servers or `vc-probe` Edge processes are running. `build-web/` holds the exact build that crashed: do not rebuild it until the reproduction below no longer needs its addresses. Scratch copies of that `.wasm` and `.js`, the disassembly and small reader scripts were in a temporary scratch folder, which may not survive a restart.
 
 Results:
 
