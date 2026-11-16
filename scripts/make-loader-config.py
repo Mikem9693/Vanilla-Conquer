@@ -13,6 +13,8 @@
 # Arguments: pack folder, pack version, base URL, data source
 # ("hosted" or "own-files-only"), then any number of label=path originals.
 # Originals with the same name and hash are listed once.
+# "multiplayer" ("on"/"off") and "relayUrl" are kept from the existing file
+# (defaults "off" and ""); edit them there by hand.
 
 import hashlib
 import json
@@ -54,8 +56,14 @@ def main(argv):
         entry["label"] = label
         own.append(entry)
 
-    config = {"dataSource": source, "dataBaseUrl": url, "packVersion": version, "files": files, "ownFiles": own}
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "web", "loader-config.json")
+    old = {}
+    if os.path.exists(out):
+        with open(out) as f:
+            old = json.load(f)
+    config = {"dataSource": source, "dataBaseUrl": url, "packVersion": version,
+              "multiplayer": old.get("multiplayer", "off"), "relayUrl": old.get("relayUrl", ""),
+              "files": files, "ownFiles": own}
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w") as f:
         json.dump(config, f, indent=2)

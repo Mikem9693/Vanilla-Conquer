@@ -45,7 +45,7 @@ rm -rf "$out/site" && mkdir -p "$out/site"
 cp "$out/vanillara.js" "$out/vanillara.wasm" "$out/site/"
 # Copy the hand-written page, loader and config; collect any that do not exist yet.
 missing=()
-for f in index.html loader.js loader-config.json; do
+for f in index.html loader.js loader-config.json multiplayer.js; do
     if [ -f "$repo/web/$f" ]; then cp "$repo/web/$f" "$out/site/"; else missing+=("web/$f"); fi
 done
 [ ${#missing[@]} -eq 0 ] || die "site incomplete, missing: ${missing[*]}"

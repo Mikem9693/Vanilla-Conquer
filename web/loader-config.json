@@ -2,6 +2,8 @@
   "dataSource": "hosted",
   "dataBaseUrl": "http://localhost:8001/packs/skirmish-v1/",
   "packVersion": "skirmish-v1",
+  "multiplayer": "on",
+  "relayUrl": "",
   "files": [
     {
       "name": "MAIN.MIX",

@@ -14,6 +14,9 @@
  *   own-files  <input type=file multiple>  player-supplied data files
  *   clear-data <button>          deletes the saved data
  *   canvas     <canvas tabindex=-1>        the game screen
+ *
+ * Multiplayer: once loader-config.json is read, this calls
+ * window.vcMultiplayerInit(config, Module) from multiplayer.js, which owns the mp-* elements.
  */
 "use strict";
 
@@ -297,6 +300,7 @@
         } catch (e) {
             return setStatus("Could not load the loader settings (" + e.message + "). Please reload.", "error");
         }
+        if (window.vcMultiplayerInit) window.vcMultiplayerInit(config, Module);
         try {
             if (window.indexedDB) db = await openDb();
         } catch (e) {
