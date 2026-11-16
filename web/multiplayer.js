@@ -165,6 +165,10 @@ window.vcMultiplayerInit = function (config, Module) {
     });
     joinBtn.addEventListener("click", join);
     codeIn.addEventListener("keydown", function (e) { if (e.key === "Enter") join(); });
+    // Keep keys typed in the panel's boxes away from the game's window-level keyboard listeners.
+    ["keydown", "keyup", "keypress"].forEach(function (t) {
+        [codeIn, link].forEach(function (box) { box.addEventListener(t, function (e) { e.stopPropagation(); }); });
+    });
     leaveBtn.addEventListener("click", leave);
     copyBtn.addEventListener("click", function () {
         var done = function () {
