@@ -1,3 +1,53 @@
+# Red Alert Skirmish in browser
+
+A WebAssembly port of Command & Conquer: Red Alert, built on
+[Vanilla Conquer](https://github.com/TheAssemblyArmada/Vanilla-Conquer).
+
+**Play:** https://PROJECT-NAME.pages.dev (desktop browsers)
+
+## Status
+- Skirmish against the AI: playable
+- Multiplayer (private rooms by invite link): in development
+- Campaigns: TBD
+
+## What this fork changes
+Small, contained changes to run in a browser, engine itself stays
+close to upstream:
+- Web build settings (Emscripten, Asyncify) in CMakeLists.txt
+- Waits hand control back to the browser (common/mssleep.h)
+- Hidden-tab handling uses the game's original focus-loss pause
+- A fix for a crash in the original game code (redalert/drive.cpp)
+- A browser loader and page (web/) and a data-pack script (scripts/)
+
+Full details and reasoning: SPIKE.md (development log).
+
+## Game data
+This repository contains **no game data**. The game needs data from EA's
+2008 freeware release of Red Alert. The hosted version downloads a small
+skirmish pack automatically, or players can load their own files.
+`scripts/make-skirmish-pack.sh` builds the pack from the original files.
+
+## Building
+- Native: see the original instructions below
+- Web: see "Building for the web" in SPIKE.md
+
+## Licence and credits
+GPL v3, as upstream. Based on EA's GPL source release of Red Alert and
+the Vanilla Conquer project by The Assembly Armada. Not affiliated with
+or endorsed by Electronic Arts. Command & Conquer and Red Alert are
+trademarks of Electronic Arts.
+
+Developed with an AI coding assistant (Claude Code), with every change
+reviewed.
+
+## Note
+This has been built as a personal learning project, please reach out with anything found in the repo you think could be done better.
+
+---
+*Original Vanilla Conquer README follows.*
+
+
+
 # Vanilla Conquer
 Vanilla Conquer is a fully portable version of the first generation C&C engine and is capable of running both Tiberian Dawn and Red Alert on multiple platforms. It can also be used for mod development for the Remastered Collection.
 
