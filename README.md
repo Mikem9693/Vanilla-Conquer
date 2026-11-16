@@ -1,4 +1,4 @@
-# Red Alert Skirmish in browser
+# Vanilla Conquer Skirmish in browser
 
 A WebAssembly port of Command & Conquer: Red Alert, built on
 [Vanilla Conquer](https://github.com/TheAssemblyArmada/Vanilla-Conquer).
