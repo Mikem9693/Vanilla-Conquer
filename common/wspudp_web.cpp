@@ -1,8 +1,15 @@
 // Web (Emscripten) replacement for wspudp.cpp: the same UDPInterfaceClass, but packets travel over a
 // browser WebSocket to a relay server instead of over UDP. A browser cannot send UDP or broadcast.
 //
+// The web page, not the game, connects to the relay and joins a room (so it can report errors such
+// as "no such room" before the game starts). It then sets Module.vcnetPre = { ws, id, room }: an open
+// WebSocket (binaryType "arraybuffer", relay hello already handled), our relay id 1..254, and the
+// room code. The page deletes Module.vcnetPre when its socket closes. This file adopts that socket:
+// it adds its own listener with addEventListener, never replaces the page's handlers, and never
+// closes the socket (leaving the game's lobby leaves the player in the room).
+//
 // Relay wire protocol v0:
-//   connect ws://HOST:PORT/?room=CODE; first frame (text) is {"t":"hello","id":N,"peers":[...]}.
+//   Text frames are for the page and are ignored here.
 //   Binary frames to the relay: byte 0 = destination id (0 = everyone else in the room), then payload.
 //   Binary frames from the relay: byte 0 = sender id, then payload. The relay never echoes.
 //
@@ -23,65 +30,32 @@ extern WWKeyboardClass* Keyboard;
 #ifdef NETWORKING
 
 // clang-format off
-// Start connecting. Returns 1 if a connection attempt was started, 0 if there is no valid room code.
+// Adopt the page's open relay connection (Module.vcnetPre). Returns our relay id, or 0 if there is none.
 EM_JS(int, vcnet_open, (void), {
-    var net = Module.vcNet;
-    if (net && net.ws) {
-        try { net.ws.close(); } catch (e) {}
-    }
-    net = Module.vcNet = { ws: null, q: [], id: 0, failed: false };
-    var room = new URLSearchParams(location.search).get("room");
-    if (!room || !/^[A-Za-z0-9]{4,32}$/.test(room)) {
-        console.log("vcnet: no valid ?room= code in the page address; network play disabled");
+    var pre = Module.vcnetPre;
+    if (!pre || !pre.ws || pre.ws.readyState !== 1 || !(pre.id >= 1 && pre.id <= 254)) {
+        console.log("vcnet: not in a room; use Create game or Join game on the page");
         return 0;
     }
-    var base = Module.relayUrl || ((location.protocol === "https:" ? "wss://" : "ws://") + location.hostname + ":8002");
-    var url = base + (base.indexOf("?") < 0 ? "/?room=" : "&room=") + encodeURIComponent(room);
-    try {
-        var ws = new WebSocket(url);
-    } catch (e) {
-        console.log("vcnet: cannot open " + url + ": " + e);
-        net.failed = true;
-        return 1;
+    var ws = pre.ws;
+    // Our listener reads Module.vcNet each time, so it is added only once per socket (marked by a flag).
+    Module.vcNet = { ws: ws, q: [], id: pre.id, active: true };
+    if (!ws.vcnetListening) {
+        ws.vcnetListening = true;
+        ws.addEventListener("message", function(ev) {
+            var net = Module.vcNet;
+            if (!net || net.ws !== ws || !net.active) return;
+            if (typeof ev.data === "string") return; // text frames are for the page
+            if (net.q.length < 4096) net.q.push(new Uint8Array(ev.data));
+        });
     }
-    ws.binaryType = "arraybuffer";
-    net.ws = ws;
-    ws.onmessage = function(ev) {
-        if (Module.vcNet !== net) return;
-        if (typeof ev.data === "string") {
-            try {
-                var m = JSON.parse(ev.data);
-                if (m.t === "hello" && m.id >= 1 && m.id <= 254) {
-                    net.id = m.id;
-                    console.log("vcnet: joined room " + room + " as id " + m.id + ", peers " + JSON.stringify(m.peers));
-                }
-            } catch (e) {}
-            return;
-        }
-        if (net.q.length < 4096) net.q.push(new Uint8Array(ev.data));
-    };
-    ws.onclose = function(ev) {
-        if (Module.vcNet !== net) return;
-        console.log("vcnet: connection closed, code " + ev.code);
-        net.failed = true;
-    };
-    ws.onerror = function() {
-        if (Module.vcNet !== net) return;
-        net.failed = true;
-    };
-    return 1;
-});
-
-// Own relay id once the hello has arrived, 0 while still connecting, -1 if the connection failed.
-EM_JS(int, vcnet_state, (void), {
-    var net = Module.vcNet;
-    if (!net || net.failed) return -1;
-    return net.id;
+    console.log("vcnet: using room " + pre.room + " as id " + pre.id);
+    return pre.id;
 });
 
 EM_JS(int, vcnet_send, (int dest, const unsigned char* data, int len), {
     var net = Module.vcNet;
-    if (!net || !net.ws || net.ws.readyState !== 1) return 0;
+    if (!net || !net.active || net.ws.readyState !== 1) return 0; // socket gone: drop quietly
     var frame = new Uint8Array(len + 1);
     frame[0] = dest;
     frame.set(HEAPU8.subarray(data, data + len), 1);
@@ -102,10 +76,12 @@ EM_JS(int, vcnet_recv, (unsigned char* buf, int max), {
     return 0;
 });
 
+// Detach only: stop queueing and forget queued frames. The page's socket stays open.
 EM_JS(void, vcnet_close, (void), {
     var net = Module.vcNet;
-    if (net && net.ws) {
-        try { net.ws.close(); } catch (e) {}
+    if (net) {
+        net.active = false;
+        net.q = [];
     }
     Module.vcNet = null;
 });
@@ -148,26 +124,9 @@ bool UDPInterfaceClass::Open_Socket(SOCKET)
             return (false);
     }
 
-    RelayId = 0;
-    if (!vcnet_open()) {
-        return (false);
-    }
-
-    // Connecting is asynchronous: give control back to the browser until the hello arrives.
-    for (int waited = 0; waited < 5000; waited += 20) {
-        int state = vcnet_state();
-        if (state < 0) {
-            break;
-        }
-        if (state > 0) {
-            RelayId = state;
-            break;
-        }
-        us_sleep(20000);
-    }
-
+    // The page has already connected and joined a room; adopt that connection.
+    RelayId = vcnet_open();
     if (RelayId == 0) {
-        vcnet_close();
         return (false);
     }
 

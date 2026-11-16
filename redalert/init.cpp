@@ -66,6 +66,9 @@
 #include "wspudp.h"
 #include "internet.h"
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
 
 #include <time.h>
 
@@ -960,6 +963,10 @@ bool Select_Game(bool fade)
                         Options.ScoreVolume = Options.MultiScoreVolume;
 #else
                         Options.ScoreVolume = 0;
+#endif
+#ifdef __EMSCRIPTEN__
+                        // Browser: tell the page the game is starting, so it can close the room to new players.
+                        EM_ASM({ if (Module.onNetGameStart) Module.onNetGameStart(); });
 #endif
                         process = false;
                         Theme.Fade_Out();
