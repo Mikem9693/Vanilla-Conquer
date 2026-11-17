@@ -3,11 +3,11 @@
 A WebAssembly build of [Vanilla Conquer](https://github.com/TheAssemblyArmada/Vanilla-Conquer)
 that runs the classic Red Alert (1996) game data in a desktop browser.
 
-**Play:** coming soon
+**Play:** https://classic-rts.pages.dev
 
 ## Status
 - Skirmish against the AI: playable
-- Multiplayer (private rooms by invite link): in development
+- Multiplayer (private rooms by invite link): playable
 - Campaigns: planned
 
 ## Changes from Vanilla Conquer

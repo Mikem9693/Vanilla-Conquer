@@ -1,0 +1,7 @@
+{
+  "dataSource": "hosted",
+  "dataBaseUrl": "https://pub-9b61ad3bd6a843cfbd7a81d0cb2ecf06.r2.dev/packs/skirmish-v1/",
+  "packVersion": "skirmish-v1",
+  "multiplayer": "on",
+  "relayUrl": "wss://classic-rts-relay.fly.dev"
+}

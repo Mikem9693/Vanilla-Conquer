@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Release web build of Red Alert (vanillara.js + vanillara.wasm) with no game data packed in.
-# Output: build-release/ (build tree, build.log) and build-release/site/ (files to publish).
+# Output: build-release/ (build tree, build.log), build-release/site/ (files to publish, production
+# config and _headers) and build-release/site-local/ (same files with the local config, for local testing).
 # The page's loader script starts the game itself with Module.callMain([]).
 # Usage: build-web-release.sh   (needs Emscripten in ~/emsdk)
 set -euo pipefail
@@ -46,10 +47,21 @@ rm -rf "$out/site" && mkdir -p "$out/site"
 cp "$out/vanillara.js" "$out/vanillara.wasm" "$out/site/"
 # Copy the hand-written page, loader and config; collect any that do not exist yet.
 missing=()
-for f in index.html loader.js loader-config.json multiplayer.js; do
+for f in index.html style.css loader.js loader-config.json multiplayer.js _headers; do
     if [ -f "$repo/web/$f" ]; then cp "$repo/web/$f" "$out/site/"; else missing+=("web/$f"); fi
 done
 [ ${#missing[@]} -eq 0 ] || die "site incomplete, missing: ${missing[*]}"
 # The GPL needs the licence text to travel with the published files.
 cp "$repo/License.txt" "$out/site/LICENSE.txt"
+# site-local: local config (localhost data and relay), no _headers. start-local-mp.sh serves it.
+rm -rf "$out/site-local" && cp -r "$out/site" "$out/site-local" && rm "$out/site-local/_headers"
+# site: merge the production settings (R2 data, Fly.io relay) over the local config.
+python3 - "$out/site/loader-config.json" "$repo/web/loader-config.production.json" <<'PY' || die "config merge failed"
+import json, sys
+path, prod = sys.argv[1], sys.argv[2]
+config = json.load(open(path))
+config.update(json.load(open(prod)))
+json.dump(config, open(path, "w"), indent=2)
+open(path, "a").write("\n")
+PY
 echo "Site ready in $out/site:" && ls -l "$out/site"

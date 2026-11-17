@@ -1,7 +1,7 @@
 #!/bin/bash
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Starts the three local multiplayer servers if they are not already running:
-#   relay 8002 (Node), site 8000 (build-release/site), game data 8001 (~/ra-data/skirmish).
+#   relay 8002 (Node), site 8000 (build-release/site-local), game data 8001 (~/ra-data/skirmish).
 # Each runs in the background with nohup, so it keeps running after this terminal closes.
 # Logs go to /tmp/vc-<name>.log.
 cd "$(dirname "$0")/.." || exit 1
@@ -18,7 +18,7 @@ start() { # start NAME PORT COMMAND...
 
 [ -d relay/node_modules ] || (cd relay && PATH=$NODE_DIR:$PATH npm install)
 DEV=1 HOST=127.0.0.1 PORT=8002 start relay 8002 "$NODE_DIR/node" relay/server.js
-start site 8000 python3 -m http.server 8000 -d build-release/site
+start site 8000 python3 -m http.server 8000 -d build-release/site-local
 start data 8001 python3 scripts/serve-pack.py ~/ra-data/skirmish
 
 sleep 1

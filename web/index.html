@@ -5,12 +5,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vanilla Red Alert</title>
-<style>
-  /* The footer is ordinary page content below everything else: it never sits on top of the
-     canvas or changes its size. Fullscreen shows only the canvas, so the footer is hidden there. */
-  footer { clear: both; margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #888;
-           font-size: 0.85em; max-width: 60em; }
-</style>
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 <h1>Vanilla Red Alert</h1>
@@ -20,10 +15,10 @@
 
 <p>
   <button id="play" disabled>Play</button>
-  <button onclick="Module.requestFullscreen(false, false)">Fullscreen</button>
+  <button id="fullscreen">Fullscreen</button>
 </p>
 
-<canvas id="canvas" tabindex="-1" oncontextmenu="event.preventDefault()"></canvas>
+<canvas id="canvas" tabindex="-1"></canvas>
 
 <section id="mp-panel" hidden>
   <h2>Multiplayer</h2>

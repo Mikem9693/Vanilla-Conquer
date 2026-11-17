@@ -1,0 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Cloudflare Pages response headers. Copied into build-release/site/ by scripts/build-web-release.sh.
+# connect-src: the R2 game data store, and the multiplayer relay (wss for games, https for its /health check).
+# 'wasm-unsafe-eval' lets the page compile vanillara.wasm without allowing JavaScript eval.
+/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self' https://pub-9b61ad3bd6a843cfbd7a81d0cb2ecf06.r2.dev wss://classic-rts-relay.fly.dev https://classic-rts-relay.fly.dev; base-uri 'self'

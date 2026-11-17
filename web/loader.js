@@ -25,6 +25,9 @@
     var el = function (id) { return document.getElementById(id); };
     var playBtn = el("play"), progress = el("progress"), status = el("status");
     var ownInput = el("own-files"), clearBtn = el("clear-data"), canvas = el("canvas");
+    // Wired here rather than in the HTML, so the Content Security Policy needs no inline script.
+    el("fullscreen").addEventListener("click", function () { Module.requestFullscreen(false, false); });
+    canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
 
     var DB_NAME = "vanillara-data", STORE = "files", MANIFEST = "manifest";
     var INI = "[Video]\nWindowed=yes\n\n[Mouse]\nRawInput=no\n\n[Intro]\nPlayIntro=no\n\n" +

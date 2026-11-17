@@ -1,0 +1,5 @@
+/* SPDX-License-Identifier: GPL-3.0-or-later */
+/* The footer is ordinary page content below everything else: it never sits on top of the
+   canvas or changes its size. Fullscreen shows only the canvas, so the footer is hidden there. */
+footer { clear: both; margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #888;
+         font-size: 0.85em; max-width: 60em; }
