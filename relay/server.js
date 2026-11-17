@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Relay: makes each "room" behave like a LAN for browser players.
 // Every player holds one WebSocket; the relay forwards each binary packet to
 // one player or to everyone else in the room. It never looks inside payloads.

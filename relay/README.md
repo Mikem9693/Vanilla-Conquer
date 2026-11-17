@@ -85,3 +85,8 @@ address.
   service with `Restart=always`). On SIGTERM or SIGINT the relay closes every
   connection with code 1001 and exits.
 - Point an uptime check at `/health`.
+
+## Licence
+
+GPL version 3 or later, like the rest of this repository. The full text is in
+`../License.txt` at the top of the repository.

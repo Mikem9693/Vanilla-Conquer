@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 // Self-test: starts the relay on spare ports and checks protocol v1.
 // Run with: node test.js   (exits non-zero on any failure)
 
