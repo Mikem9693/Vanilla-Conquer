@@ -1993,3 +1993,94 @@ Reported by the owner after the relay was started; not seen by a worker.
 ### Hand-off
 
 Commits `cca8ba6`, then the notes commits "Notes: session 10 multiplayer checks" and "Notes: session 10 owner's test passed"; nothing pushed. The relay (8002), site (8000) and data (8001) servers were left running for the owner's two-window test. The headless Edge instances were closed.
+
+## Session 11: Merge, relay hardening, hosting comparison (16 to 17 Nov 2026)
+
+**Result:** `multiplayer` is merged into `browser`, the relay (the small server that passes messages between players) is ready to be hosted in public, and three hosts have been compared. Fly.io is recommended; the choice is with the owner. Nothing was deployed and nothing was pushed, as the owner asked. Builds were clean, the relay tests went from 34 to 39 passing with 0 failing, and a skirmish and two two-browser matches ran with no console errors.
+
+Scope from the owner: merge `multiplayer` into `browser`; a configurable relay address, with `wss://` (the encrypted WebSocket) for production; harden the relay; licence notices in `relay/`; compare hosts. Much of this already existed from sessions 9 and 10 (the `relayUrl` setting, the `ALLOWED_ORIGINS` list, size and count caps, counts-only logging), so only the gaps were filled.
+
+These notes were written from the workers' final summaries. The full reports are in `~/ra-data/session11/` (`worker-a.md`, `worker-b.md`, `worker-a2.md`, `hosting.md`); the owner can open them.
+
+### Merge and baseline
+
+- The merge was a fast-forward (`browser` was a direct ancestor of `multiplayer`, so git just moved the branch pointer forward and there were no conflicts). `browser` went from `656d49b` to `043b527`; tree clean [obs].
+- [obs] `build-web-release.sh` finished in 11 s with 0 errors and 0 warnings. Relay tests: 34 passed, 0 failed.
+- [obs] Skirmish against one computer player (Equal Opportunity, small map, default settings) ran about 5 min 40 s. Console: no errors, warnings or exceptions, only `favicon.ico` 404s. No orders were given, so it was not played to a win.
+- [inf] Craters appeared and some of the worker's units were gone between the two screenshots, which the worker took to mean the AI attacked; the attack itself was not seen.
+- [obs] Two browsers, room ZNDX84: both lobbies showed the same players (Noname and bob), map (Keep off the Grass) and options; both pages reached the game with their own bases and no console errors. The screenshot pair was taken at the same moment, about 2 min 15 s in. Whether the two games stayed in sync was not checked.
+- [obs] `monitor.js` always shows frame=-1987497592 and fps 0: the stale frame-counter address already in the rig notes. The screenshots show the game moving.
+
+### Relay hardening and address check
+
+Three commits, 8 files, 137 insertions, 24 deletions:
+
+- `78a8d46` "Relay: fail-closed origins, dev mode, 15-minute lobby expiry"
+- `0f03e0c` "Web: refuse an unencrypted relay address on https pages"
+- `cc02645` "Relay: licence notices"
+
+What changed [code, from the diff]:
+
+- Fail-closed origins: a new `originAllowed()` in `relay/server.js`. "Fail-closed" means that if no allowed list is set, nobody gets in, instead of everybody. A page's origin is its scheme, host and port, for example `http://localhost:8000`.
+- New setting `DEV`: `DEV=1` lets any origin connect, for local work only. Without `DEV` and without `ALLOWED_ORIGINS`, the relay refuses to start; that check is in the command-line start-up path. `scripts/start-local-mp.sh` now starts the relay with `DEV=1`.
+- Lobby expiry: new setting `LOBBY_MAX_AGE_MS`, default 900000 (15 minutes). The ticket asked for a "15-minute unused-link expiry", which did not exist in the relay; the owner chose (16 Nov 2026) to close rooms whose match has not started 15 minutes after creation.
+- `web/multiplayer.js` refuses a `ws://` `relayUrl` on an https page with a clear message (browsers block unencrypted connections from https pages anyway; this makes the reason visible).
+- `relay_url_error()` in `scripts/make-loader-config.py` rejects a value that is not `ws://` or `wss://`, and `ws://` when the base URL is https.
+- Licence: SPDX line `GPL-3.0-or-later` on `server.js` and `test.js` (an SPDX line is a standard one-line licence tag), the same id in `package.json` and `package-lock.json`, and a README "Licence" section pointing to `../License.txt`.
+
+Notes from worker B:
+
+- [obs] Tests: 34/0 before; 39/0 after the first commit and again at the end.
+- Existing tests: `listen()` now passes `dev: true` unless overridden, and the SIGTERM test's child process gets `DEV=1`. The old origin test runs with `dev: false`, so it now checks the production behaviour.
+- The close message for code 4006 said "...idle for too long or too old." It now says "...idle for too long, its match was not started in time, or it was open too long."
+- Logging already printed only counts and the relay's own listen address; nothing changed. Tests for the caps (4001, 4005, oversize frames) already existed; none added.
+- Different from the brief: `make-loader-config.py` had no flags and no output path, so `--relay-url` is accepted anywhere in the arguments, and the check function and its error exits were tested directly. `loader-config.json` is unchanged.
+
+Commit credit line: worker B first tried to commit with a "Claude Opus 5.5" co-author line instead of the briefed "Claude Fable 5.2" line, and the permission system denied it. The owner was asked and chose the Fable 5.2 line (17 Nov 2026); all three commits carry it.
+
+### Re-test against the hardened relay
+
+- [obs] Build: 0 errors, 0 warnings. Relay tests: 39 passed, 0 failed.
+- [obs] Dev mode, two browsers (relay 8002, `DEV=1`): room PSB6CH; the match started and both pages were in-game with no console errors. Sync not checked.
+- [obs] Expiry: a second relay on 8003 without `DEV`, allowed origin `http://localhost:8000`, 20 s limit. Create game worked; after 25 s the page said "The room was closed because it was idle for too long, its match was not started in time, or it was open too long. You are no longer connected to room MYFVAG. You can join it again." The close code was not seen, so 4006 is assumed.
+- [obs] Refused origin (`https://example.invalid` only): Create game showed "Could not connect to the multiplayer server. Check your connection and try again." A curl test with that origin got 403, so it was an origin refusal; the page cannot tell that apart from the server being down.
+- [obs] Neither `DEV` nor `ALLOWED_ORIGINS` set: the relay printed "relay: set ALLOWED_ORIGINS to the site's origin(s), or DEV=1 for local work" and exited with code 1.
+- Cleanup: 8003 stopped, `build-release/site/loader-config.json` restored to `"relayUrl": ""`.
+- Screenshots in `build-release/probe-tools/shots/` (git-ignored): `s11-skirmish-start.png`, `s11-skirmish-end.png`, `s11-mp-A.png`, `s11-mp-B.png`, `s11b-mp-A.png`, `s11b-mp-B.png`, `s11b-expired.png`, `s11b-refused.png`.
+
+### Hosting comparison
+
+Full comparison with all links: `~/ra-data/session11/hosting.md`. Prices and limits came from official pages fetched on 16 Nov 2026.
+
+| Host | Cost | Sleeps or restarts | Effort |
+|---|---|---|---|
+| Fly.io (recommended) | Machine $2.19/month plus $0.02/GB; bills under $5 waived (personal organisation), so about £0; card needed after 7-day trial | Scale-to-zero is on by default but can be switched off free; deploys and proxy restarts drop matches | About 1 to 2 hours of config |
+| Cloudflare Workers + Durable Objects | Free: 100k requests/day, 13k GB-s/day; paid from $5/month | Cloudflare can restart a room's object at any time, closing its WebSockets | Full rewrite, about 1 to 2 days |
+| Hetzner CPX02 | EUR 5.49 to 6.49/month excluding VAT | Never sleeps; Germany or Finland, no UK | About half a day (Caddy for `wss://`, systemd), then keeping it patched |
+
+- Recommendation: Fly.io, one always-on 256 MB Machine in London (lhr) with autostop off. The relay runs almost unchanged; it gets `wss://` and the real client address (`Fly-Client-IP`).
+- [inf] Cloudflare: incoming messages count at 20 to 1 request and duration is billed on the full 128 MB while active; a busy match never hibernates. Assuming 10 to 30 messages a second per player (to be measured), the free cap covers only about 2 to 7 match-hours a day.
+- Screened out: Render free (sleeps after 15 minutes, may restart any time); Railway free ($1/month credit only); Koyeb free (sleeps after 1 hour; its $1.61/month eco-nano is the runner-up, EU availability unverified); Oracle (reclaims instances it considers idle, and a tiny relay would look idle).
+- Main risk: anything that restarts the Machine ends every match; a card is required; the $5 waiver is a policy that could change.
+- Not verified: whether Fly logs request URLs and client addresses; whether Fly moves or restarts Machines for maintenance; whether `fly launch` creates two Machines by default (exactly one must run, because rooms exist only in one process's memory); whether Cloudflare's free plan needs a card and what happens at the daily cap; VAT on Hetzner for UK customers and whether Hetzner needs a card.
+- Key links: https://docs.fly.io/about/pricing ; https://docs.fly.io/launch/autostop-autostart/ ; https://fly.io/learn/websockets-workers-cron/ ; https://developers.cloudflare.com/durable-objects/platform/pricing/ ; https://developers.cloudflare.com/durable-objects/concepts/durable-object-lifecycle/ ; https://www.hetzner.com/cloud/regular-performance/
+
+### Open items
+
+- With the owner: choose the host (Fly.io recommended); a full play-through.
+- After a room expires the page still says "You can join it again", which is wrong because the room is gone (joining gives 4003). Same for the 12-hour expiry.
+- A refused origin shows the generic "Could not connect to the multiplayer server" message.
+- The room code travels in the connection URL, so a host's request logs may record it. Changing that is a protocol change.
+- The Fly.io points in "Not verified" above are not checked on official pages.
+- The message rate per player (used in the Cloudflare estimate) has not been measured.
+- The skirmish ran about 5 min 40 s with no orders given; not played to a win.
+- The two-browser checks this session did not verify that the two games stayed in sync (session 10 did).
+
+### Rig notes
+
+- The Read tool cannot open files outside the repository folder (a permission setting), so the worker reports in `~/ra-data/session11/` could not be read by the notes worker. Save future reports inside the repository's `build-release/` folder (outside version control) instead.
+- The frame-counter address is still stale (`monitor.js` shows fps 0).
+
+### Hand-off
+
+Code commits `78a8d46`, `0f03e0c`, `cc02645`, then the notes commit "Notes: session 11 merge, relay hardening, hosting". Nothing deployed and nothing pushed: `browser` is ahead of `origin/browser`. Local servers left running: 8000 (site), 8001 (data), 8002 (relay, new code, `DEV=1`). Headless Edge instances closed.
