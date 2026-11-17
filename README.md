@@ -22,6 +22,10 @@ This is a modified version of Vanilla Conquer, changed by Mikem9693 in
 - Web loader: uses hosted game data or the player's own files, cached
   in the browser and checked with SHA-256
 
+## Note
+
+This has been created as a learning exercise. Please reach out if you have any suggestions or comments about the project.
+
 ## Licence and credits
 Free software under the GNU General Public License v3, including the
 additional terms from Electronic Arts' source release (see LICENSE).
