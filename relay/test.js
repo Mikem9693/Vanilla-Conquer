@@ -162,12 +162,14 @@ async function limits() {
     s.server.close();
 
     s = await listen({ maxPerIp: 2, trustProxy: true });
-    const ipA = { headers: { "X-Forwarded-For": "10.0.0.1, 10.9.9.9" } };
-    r1 = await connect(s.port, "room1111", "", ipA);
-    r2 = await connect(s.port, "room1111", "", ipA);
-    r3 = await connect(s.port, "room1111", "", ipA);
-    const r4 = await connect(s.port, "room1111", "", { headers: { "X-Forwarded-For": "10.0.0.2" } });
+    // Same Fly-Client-IP each time, but a different made-up X-Forwarded-For: the limit must still apply.
+    const ipA = (fake) => ({ headers: { "Fly-Client-IP": "10.0.0.1", "X-Forwarded-For": fake } });
+    r1 = await connect(s.port, "room1111", "", ipA("10.7.0.1"));
+    r2 = await connect(s.port, "room1111", "", ipA("10.7.0.2"));
+    r3 = await connect(s.port, "room1111", "", ipA("10.7.0.3"));
+    const r4 = await connect(s.port, "room1111", "", { headers: { "Fly-Client-IP": "10.0.0.2" } });
     check("MAX_PER_IP: third from one address 4005, other address ok", r3.closeCode === 4005 && r4.texts.length > 0);
+    check("MAX_PER_IP: Fly-Client-IP counts, X-Forwarded-For ignored", r1.texts.length > 0 && r2.texts.length > 0);
     closeAll([r1, r2, r4]);
     s.server.close();
 

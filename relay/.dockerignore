@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+node_modules
+test.js
+fly.toml
+Dockerfile
+.dockerignore
+README.md

@@ -1,0 +1,36 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Fly.io settings for the multiplayer relay. Deploy from this folder: fly deploy --ha=false
+# Exactly one machine: rooms live in that machine's memory, so a second machine would split them.
+app = "classic-rts-relay"
+primary_region = "lhr"
+kill_signal = "SIGTERM"  # server.js closes every client with 1001, then exits
+
+[env]
+  HOST = "0.0.0.0"
+  PORT = "8002"
+  ALLOWED_ORIGINS = "https://classic-rts.pages.dev"
+  TRUST_PROXY = "1"  # per-address limits use Fly-Client-IP
+  # Never set DEV here: it would let in pages from any localhost and clients with no Origin.
+
+[http_service]  # Fly's proxy handles TLS on 443 (wss://) and forwards plain ws:// to 8002
+  internal_port = 8002
+  force_https = true
+  auto_stop_machines = "stop"  # stop when there are no connections
+  auto_start_machines = true   # wake on the next request
+  min_machines_running = 0
+
+  [http_service.concurrency]  # the relay's own MAX_CLIENTS (800) is the real limit
+    type = "connections"
+    soft_limit = 750
+    hard_limit = 800
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

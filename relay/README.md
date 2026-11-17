@@ -36,7 +36,7 @@ request gets status 426, meaning "use a WebSocket".
 | `IDLE_MS` | `1800000` (30 min) | Disconnect a player who sends no game packet for this long |
 | `ROOM_MAX_AGE_MS` | `43200000` (12 h) | Close a room this long after it was created |
 | `LOBBY_MAX_AGE_MS` | `900000` (15 min) | Close a room whose match has not started (not locked) this long after it was created |
-| `TRUST_PROXY` | off | Set to `1` to take the address from the first `X-Forwarded-For` entry |
+| `TRUST_PROXY` | off | Set to `1` to take the player's address from the `Fly-Client-IP` header (set by Fly.io's proxy); `X-Forwarded-For` is never used, because a client can fake it |
 | `ALLOWED_ORIGINS` | empty | Comma-separated list of web page origins allowed to connect; others, and connections with no `Origin` header, get HTTP 403. Required unless `DEV=1`: with it empty the relay refuses to start |
 | `DEV` | off | Set to `1` for local work: also accepts pages from `localhost`, `127.0.0.1` or `[::1]` (any port) and connections with no `Origin` header |
 
@@ -69,7 +69,11 @@ The room code is part of the connection address (`/?room=CODE`), so a hosting
 provider's or proxy's own request logs may record it next to the player's
 address.
 
-## Hosting notes (untested: nothing is deployed and no provider is chosen)
+## Hosting notes
+
+Deployed on Fly.io as `classic-rts-relay` (`wss://classic-rts-relay.fly.dev`): see `fly.toml` and
+`Dockerfile` in this folder. Deploy with `fly deploy --ha=false` from here; keep exactly one machine,
+because rooms live in memory. The general notes below still apply.
 
 - A page served over `https://` can only open `wss://` (encrypted) WebSockets.
   The relay itself speaks plain `ws://`, so put it behind a reverse proxy

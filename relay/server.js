@@ -31,7 +31,7 @@ const RULES = {
     lobbyMaxAgeMs: num("LOBBY_MAX_AGE_MS", 900000), // rooms not locked after 15 min: close 4006
     pingMs: 30000, // heartbeat ping interval; no pong by the next ping: terminate
     tickMs: 1000, // how often counters reset and timeouts are checked
-    trustProxy: env.TRUST_PROXY === "1", // take the address from X-Forwarded-For
+    trustProxy: env.TRUST_PROXY === "1", // take the address from Fly-Client-IP (set by Fly.io's proxy)
     dev: env.DEV === "1", // local work: also accept localhost pages and a missing Origin
     allowedOrigins: (env.ALLOWED_ORIGINS || "") // web pages allowed to connect; required unless dev
         .split(",")
@@ -89,8 +89,10 @@ function start(host, port, onListening, overrides) {
     const logCounts = () => console.log(`rooms: ${rooms.size}, clients: ${total}`);
 
     function clientIp(req) {
-        const fwd = req.headers["x-forwarded-for"];
-        if (rules.trustProxy && fwd) return fwd.split(",")[0].trim();
+        // Fly.io's proxy overwrites Fly-Client-IP, so a client cannot fake it. X-Forwarded-For is not
+        // used: a client can put any address at the front of it and dodge the per-address limit.
+        const fly = req.headers["fly-client-ip"];
+        if (rules.trustProxy && fly) return fly.trim();
         return req.socket.remoteAddress || "";
     }
 
