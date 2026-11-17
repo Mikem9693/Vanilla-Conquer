@@ -220,6 +220,13 @@ SurfaceMonitorClass& AllSurfaces = AllSurfacesDummy; // List of all direct draw 
  *=============================================================================================*/
 bool Set_Video_Mode(int w, int h, int bits_per_pixel)
 {
+#ifdef __EMSCRIPTEN__
+    /*
+    ** The game sits inside a web page: take keyboard input only while the canvas has focus, so typing
+    ** elsewhere on the page (such as the room code box) never reaches the game. Read when the window is made.
+    */
+    SDL_SetHint(SDL_HINT_EMSCRIPTEN_KEYBOARD_ELEMENT, "#canvas");
+#endif
     SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS);
     SDL_ShowCursor(SDL_DISABLE);
 

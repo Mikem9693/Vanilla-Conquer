@@ -56,6 +56,14 @@
       <p class="muted small" id="progress-text">This only happens on your first visit.</p>
     </div>
     <button id="play" class="btn btn-play" type="button" disabled>Play <kbd class="kbd">Enter</kbd></button>
+    <!-- The game: shown in place of the Play button once the game starts (body gets .is-playing). -->
+    <div class="game-area">
+      <canvas id="canvas" class="game-canvas" tabindex="0" aria-label="Game"></canvas>
+      <div class="game-bar">
+        <p class="game-hint muted small">Click the game to control it</p>
+        <button id="fullscreen" class="btn btn-outline" type="button">Fullscreen</button>
+      </div>
+    </div>
     <div class="row-between">
       <p class="muted small grow">First visit downloads about 28 MB of game data. After that it loads from your browser.</p>
       <div class="btn-row">
@@ -166,7 +174,7 @@
     </div>
 
     <div class="tab-panel prose" role="tabpanel" id="panel-legal" aria-labelledby="tab-legal" tabindex="0" hidden>
-      <p><strong>Licence:</strong> free software under the <a href="LICENSE.txt">GNU GPL v3 with EA's additional terms</a>, provided as is, with no warranty. <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.2.0">Source code for this version</a>.</p>
+      <p><strong>Licence:</strong> free software under the <a href="LICENSE.txt">GNU GPL v3 with EA's additional terms</a>, provided as is, with no warranty. <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.2.1">Source code for this version</a>.</p>
       <p><strong>Trademarks:</strong> Command &amp; Conquer and Red Alert are trademarks of Electronic Arts. No trademark rights are granted or claimed. Game content © Electronic Arts.</p>
       <p><strong>Privacy:</strong> no accounts, analytics or tracking cookies. Game data is cached in your browser, and your own files are never uploaded. The multiplayer relay sees your IP address to connect players and doesn't store it. Our hosting provider may keep standard connection logs for a short time.</p>
     </div>
@@ -175,17 +183,12 @@
   <footer class="site-footer">
     <span>Unofficial. Not affiliated with Electronic Arts.</span>
     <a href="LICENSE.txt">GPL v3 licence</a>
-    <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.2.0">Source for v0.2.0</a>
+    <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.2.1">Source for v0.2.1</a>
     <span>Removal requests: <a href="mailto:mikemautomation@gmail.com">mikemautomation@gmail.com</a></span>
   </footer>
 
 </main>
 </div>
-
-<!-- The game canvas: shown when body has .is-playing. Keep the existing canvas element and its ID. -->
-<canvas id="canvas" class="game-canvas" tabindex="-1"></canvas>
-<!-- Shown only while playing, below the canvas so it never covers the game. -->
-<div class="game-bar"><button id="fullscreen" class="btn btn-outline" type="button">Fullscreen</button></div>
 
 <script src="multiplayer.js"></script>
 <script src="loader.js"></script>

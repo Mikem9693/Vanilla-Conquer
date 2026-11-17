@@ -215,14 +215,23 @@ progress::-moz-progress-bar { background: var(--accent); }
   padding-top: 8px; font-size: 13px; color: var(--faint);
 }
 
-/* Game: the page hides and the canvas takes over once Play is pressed */
-.game-canvas { display: none; }
-body.is-playing .page { display: none; }
-body.is-playing .game-canvas { display: block; margin: 0 auto; }
-/* The canvas takes keyboard focus for the game: no focus ring around the playing area. */
-.game-canvas:focus { outline: none; }
-.game-bar { display: none; }
-body.is-playing .game-bar { display: flex; justify-content: center; padding: 12px; }
+/* Game: once Play is pressed, the game shows in the status panel in place of the Play button. */
+.game-area { display: none; }
+body.is-playing .game-area { display: flex; flex-direction: column; gap: 10px; }
+body.is-playing #play { display: none; }
+/* SDL and Emscripten set the canvas size inline; !important keeps it at the panel width (16:10).
+   In fullscreen the engine sets its own inline !important size, which wins, and removes it on exit. */
+.game-canvas {
+  display: block; width: 100% !important; height: auto !important; aspect-ratio: 16 / 10;
+  image-rendering: pixelated; background: #000;
+  /* An outline, not a border: SDL maps mouse positions over the canvas box, and a border would shift them. */
+  outline: 2px solid var(--line); outline-offset: 0;
+}
+.game-canvas:focus, .game-canvas:focus-visible { outline: 2px solid var(--radar); outline-offset: 0; }
+.game-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.game-hint { margin: 0; }
+/* The hint shows only while the game doesn't have keyboard focus. */
+.game-area:focus-within .game-hint { visibility: hidden; }
 
 /* Wiring for the real page controls (loader.js and multiplayer.js) */
 /* The download bar's box shows only while loader.js shows the progress bar. */

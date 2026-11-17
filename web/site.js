@@ -35,6 +35,16 @@
     });
   });
 
+  // While the game has focus, keys that would scroll the page don't. The events still reach the game
+  // (SDL listens on the canvas); only the browser's default action is cancelled. Space is cancelled on
+  // keypress, not keydown, so it still types in the game's text boxes.
+  var canvas = document.getElementById("canvas");
+  if (canvas) {
+    var SCROLL_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "PageUp", "PageDown", "Home", "End"];
+    canvas.addEventListener("keydown", function (e) { if (SCROLL_KEYS.indexOf(e.key) >= 0) e.preventDefault(); });
+    canvas.addEventListener("keypress", function (e) { if (e.key === " ") e.preventDefault(); });
+  }
+
   // Enter starts the game, but only before it has started, and never while
   // the player is typing in a field or using another control.
   var play = document.getElementById("play");
