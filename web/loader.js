@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
 /*
  * Loader for the browser build of Vanilla Red Alert.
  *

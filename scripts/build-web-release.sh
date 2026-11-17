@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Release web build of Red Alert (vanillara.js + vanillara.wasm) with no game data packed in.
 # Output: build-release/ (build tree, build.log) and build-release/site/ (files to publish).
 # The page's loader script starts the game itself with Module.callMain([]).
@@ -49,4 +50,6 @@ for f in index.html loader.js loader-config.json multiplayer.js; do
     if [ -f "$repo/web/$f" ]; then cp "$repo/web/$f" "$out/site/"; else missing+=("web/$f"); fi
 done
 [ ${#missing[@]} -eq 0 ] || die "site incomplete, missing: ${missing[*]}"
+# The GPL needs the licence text to travel with the published files.
+cp "$repo/License.txt" "$out/site/LICENSE.txt"
 echo "Site ready in $out/site:" && ls -l "$out/site"

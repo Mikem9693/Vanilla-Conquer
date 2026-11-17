@@ -1,9 +1,16 @@
 <!doctype html>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Vanilla Red Alert</title>
+<style>
+  /* The footer is ordinary page content below everything else: it never sits on top of the
+     canvas or changes its size. Fullscreen shows only the canvas, so the footer is hidden there. */
+  footer { clear: both; margin-top: 2em; padding-top: 0.5em; border-top: 1px solid #888;
+           font-size: 0.85em; max-width: 60em; }
+</style>
 </head>
 <body>
 <h1>Vanilla Red Alert</h1>
@@ -37,10 +44,18 @@
 </p>
 <p><button id="clear-data">Clear saved game data</button></p>
 
-<section>
-  <h2>Legal</h2>
-  <p>Legal notices go here.</p>
-</section>
+<footer>
+  <p>Vanilla Conquer Skirmish in Browser: an unofficial, modified build of Vanilla Conquer.
+     Free software under the <a href="LICENSE.txt">GNU GPL v3 with EA's additional terms</a>,
+     provided as is, with no warranty.
+     <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.1.0">Source code for this version</a>.</p>
+  <p>Built on <a href="https://github.com/TheAssemblyArmada/Vanilla-Conquer">Vanilla Conquer</a>
+     and source code released by Electronic Arts. Not affiliated with or endorsed by Electronic Arts.
+     Game content © Electronic Arts. Removal requests: <a href="mailto:CONTACT">CONTACT</a>.</p>
+  <p>Privacy: no accounts, analytics or tracking cookies. Game data is cached in your browser.
+     "Use my own files" never uploads them. The multiplayer relay sees your IP address
+     to connect players and does not store it long term.</p>
+</footer>
 
 <script src="multiplayer.js"></script>
 <script src="loader.js"></script>

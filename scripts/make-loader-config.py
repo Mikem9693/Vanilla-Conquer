@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Writes web/loader-config.json: the list of game data files the web loader
 # accepts, with their sizes and SHA-256 hashes. No game data goes in the file.
 #

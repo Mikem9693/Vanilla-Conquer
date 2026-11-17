@@ -1,4 +1,5 @@
 #!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Starts the three local multiplayer servers if they are not already running:
 #   relay 8002 (Node), site 8000 (build-release/site), game data 8001 (~/ra-data/skirmish).
 # Each runs in the background with nohup, so it keeps running after this terminal closes.

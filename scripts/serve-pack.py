@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Local stand-in for the hosted data store (Cloudflare R2). Serves only the
 # files directly inside one folder, under one URL prefix, with a CORS header
 # so the game page on another port may fetch them.

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Rebuild the trimmed Red Alert skirmish data pack (MAIN.MIX, REDALERT.MIX, SCORES.MIX)
 # from the original Allied disc archives. Game data never goes in this repo.
 # Usage: make-skirmish-pack.sh <disc folder> <output folder> [vanillamix]
