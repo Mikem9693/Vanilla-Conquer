@@ -8,6 +8,8 @@
  * Settings (loader-config.json): "multiplayer": "on" | "off" (off: panel hidden,
  * nothing connects); "relayUrl": "" means ws(s)://<page hostname>:8002. A ws://
  * relayUrl is refused on an https page (browsers block unencrypted sockets there).
+ * If the socket fails before opening, one no-cors fetch of the relay's /health
+ * tells "server down" from "server up but this site's origin not allowed".
  *
  * Page contract: this script uses only these element IDs.
  *   mp-panel   container; hidden when multiplayer is off
@@ -47,10 +49,11 @@ window.vcMultiplayerInit = function (config, Module) {
         4003: "There is no room with that code. Check the code, or create a new game.",
         4004: "The game in that room has already started, so it is closed to new players.",
         4005: "The multiplayer server is full right now. Please try again in a few minutes.",
-        4006: "The room was closed because it was idle for too long, its match was not started in time, " +
-              "or it was open too long.",
+        4006: "The connection was closed because nothing was sent for too long.",
         4007: "The connection was closed because this browser sent data too fast."
     };
+    var EXPIRED = "This room has closed: its match was not started in time, or it was open too long. " +
+                  "The room no longer exists, so create a new game to play.";
     var ws = null, room = "", peers = 0, inRoom = false, locked = false, gameStarted = false, retried = false;
     var hiddenAt = 0, savedTitle = document.title;
 
@@ -59,6 +62,17 @@ window.vcMultiplayerInit = function (config, Module) {
     function relayBase() {
         if (config.relayUrl) return config.relayUrl.replace(/\/+$/, "");
         return (location.protocol === "https:" ? "wss://" : "ws://") + location.hostname + ":8002";
+    }
+
+    // A failed handshake hides its HTTP status, so ask /health whether the server is up at all.
+    function probeRelay(done) {
+        var ctl = window.AbortController ? new AbortController() : null;
+        var timer = setTimeout(function () { if (ctl) ctl.abort(); }, 3000);
+        var url;
+        try { url = new URL(relayBase().replace(/^ws/i, "http")).origin + "/health"; } catch (e) { return done(false); }
+        fetch(url, { mode: "no-cors", cache: "no-store", signal: ctl ? ctl.signal : undefined }).then(
+            function () { clearTimeout(timer); done(true); },
+            function () { clearTimeout(timer); done(false); });
     }
 
     function newCode() {  // 256 is a multiple of 32, so x % 32 has no bias
@@ -107,6 +121,8 @@ window.vcMultiplayerInit = function (config, Module) {
         ws = sock;
         sock.binaryType = "arraybuffer";
         show();
+        var opened = false;
+        sock.addEventListener("open", function () { opened = true; });
         sock.addEventListener("message", function (ev) {
             if (sock !== ws || typeof ev.data !== "string") return;  // binary frames are game data
             var m;
@@ -136,11 +152,18 @@ window.vcMultiplayerInit = function (config, Module) {
             retried = false;
             show();
             var msg = CLOSE[ev.code] || "";
-            if (was) {
+            if (ev.code === 4006 && ev.reason === "room expired") msg = EXPIRED;
+            else if (was) {
                 msg += (msg ? " " : "") + "You are no longer connected to room " + code + ". You can join it again" +
                        (gameStarted ? "; if a match was running, go back to the game's main menu and choose Network again." : ".");
             } else if (!msg) {
                 msg = "Could not connect to the multiplayer server. Check your connection and try again.";
+                if (!opened) return probeRelay(function (up) {
+                    if (ws) return;  // a new attempt has started
+                    setStatus(up ? "The multiplayer server is running but did not accept this site. This is a " +
+                                   "set-up problem with the site, not your connection: the site's address must be " +
+                                   "on the multiplayer server's allowed list." : msg, "error");
+                });
             }
             setStatus(msg, "error");
         });
