@@ -10,6 +10,7 @@ kill_signal = "SIGTERM"  # server.js closes every client with 1001, then exits
   PORT = "8002"
   ALLOWED_ORIGINS = "https://classic-rts.pages.dev"
   TRUST_PROXY = "1"  # per-address limits use Fly-Client-IP
+  METRICS_PORT = "9091"  # usage counters, read only by Fly's metrics collector (see [metrics])
   # Never set DEV here: it would let in pages from any localhost and clients with no Origin.
 
 [http_service]  # Fly's proxy handles TLS on 443 (wss://) and forwards plain ws:// to 8002
@@ -34,3 +35,10 @@ kill_signal = "SIGTERM"  # server.js closes every client with 1001, then exits
 [[vm]]
   size = "shared-cpu-1x"
   memory = "256mb"
+
+# Fly.io collects the relay's counters from this port over its private network. It is not listed
+# under [http_service], so it is never reachable from the internet. The counters restart at 0 when
+# the machine stops; Fly keeps what it has already collected, so use increase() for totals.
+[metrics]
+  port = 9091
+  path = "/metrics"

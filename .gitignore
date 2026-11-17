@@ -3,3 +3,5 @@
 /.cache
 /.vscode
 /.wrangler/
+# Built from CHANGELOG.md by scripts/make-changelog.py; never committed.
+/web/changelog.html

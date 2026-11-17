@@ -33,6 +33,9 @@ const RULES = {
     tickMs: 1000, // how often counters reset and timeouts are checked
     trustProxy: env.TRUST_PROXY === "1", // take the address from Fly-Client-IP (set by Fly.io's proxy)
     dev: env.DEV === "1", // local work: also accept localhost pages and a missing Origin
+    // Usage counters in Prometheus format on a separate port that is never public (off when unset).
+    metricsPort: env.METRICS_PORT ? num("METRICS_PORT", 0) : null,
+    metricsHost: env.METRICS_HOST || "::", // all addresses, so Fly.io's collector reaches it privately
     allowedOrigins: (env.ALLOWED_ORIGINS || "") // web pages allowed to connect; required unless dev
         .split(",")
         .map((s) => s.trim())
@@ -85,6 +88,8 @@ function start(host, port, onListening, overrides) {
     const rooms = new Map(); // room code -> room; a room exists only while someone is in it
     const perIp = new Map(); // address -> live connection count (nothing else kept)
     let total = 0; // live clients on the whole relay
+    // Running totals since this process started. Numbers only: no addresses, room codes or players.
+    const counts = { roomsCreated: 0, roomsJoined: 0, matchesStarted: 0 };
 
     const logCounts = () => console.log(`rooms: ${rooms.size}, clients: ${total}`);
 
@@ -108,6 +113,7 @@ function start(host, port, onListening, overrides) {
         if (!msg || typeof msg !== "object" || Array.isArray(msg)) return;
         if (Object.keys(msg).length !== 1 || msg.t !== "lock") return;
         room.started = true;
+        counts.matchesStarted++;
         tellOthers(room, 0, { t: "locked" });
     }
 
@@ -134,6 +140,7 @@ function start(host, port, onListening, overrides) {
         if (!room) {
             room = { clients: new Map(), nextId: 1, started: false, createdAt: Date.now() };
             rooms.set(code, room);
+            counts.roomsCreated++;
         }
         total++;
         perIp.set(ip, (perIp.get(ip) || 0) + 1);
@@ -143,6 +150,10 @@ function start(host, port, onListening, overrides) {
         // Per-client state: rate counters for this tick and the idle clock.
         const cl = { ws, msgs: 0, bytes: 0, over: false, overTicks: 0, lastBinary: Date.now() };
         room.clients.set(id, cl);
+        if (room.clients.size === 2 && !room.joined) {
+            room.joined = true; // count each room once, however many players come and go
+            counts.roomsJoined++;
+        }
         sendText(ws, { t: "hello", id, peers });
         tellOthers(room, id, { t: "join", id });
         logCounts();
@@ -243,6 +254,28 @@ function start(host, port, onListening, overrides) {
         clearInterval(tick);
         clearInterval(heartbeat);
     });
+
+    // Metrics: GET /metrics only, on its own port, which fly.toml does not publish.
+    if (rules.metricsPort !== null && rules.metricsPort !== undefined) {
+        const metric = (name, help, value) =>
+            `# HELP ${name} ${help}\n# TYPE ${name} counter\n${name} ${value}\n`;
+        server.metrics = http.createServer((req, res) => {
+            if (req.method !== "GET" || new URL(req.url, "http://x").pathname !== "/metrics") {
+                res.writeHead(404);
+                return res.end();
+            }
+            res.writeHead(200, { "Content-Type": "text/plain; version=0.0.4" });
+            res.end(
+                metric("relay_rooms_created_total", "Rooms created since the relay started.", counts.roomsCreated) +
+                    metric("relay_rooms_joined_total", "Rooms a second player joined.", counts.roomsJoined) +
+                    metric("relay_matches_started_total", "Matches started (rooms locked).", counts.matchesStarted)
+            );
+        });
+        server.metrics.listen(rules.metricsPort, rules.metricsHost, () =>
+            console.log(`metrics listening on port ${server.metrics.address().port}`)
+        );
+        server.on("close", () => server.metrics.close());
+    }
 
     server.listen(port, host, () => {
         console.log(`relay listening on ${host}:${server.address().port}`);

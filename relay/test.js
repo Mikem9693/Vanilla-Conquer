@@ -292,8 +292,37 @@ function refusesOpen() {
     });
 }
 
+// ---- Usage counters on the separate metrics port ----
+async function metrics() {
+    const s = await listen({ metricsPort: 0, metricsHost: "127.0.0.1" });
+    const mport = await new Promise((r) =>
+        s.server.metrics.listening ? r(s.server.metrics.address().port) : s.server.metrics.on("listening", () => r(s.server.metrics.address().port))
+    );
+    const value = (body, name) => Number((body.match(new RegExp("^" + name + " (\\d+)$", "m")) || [])[1]);
+    const zero = (await get(mport, "/metrics")).body;
+    check("metrics start at zero", value(zero, "relay_rooms_created_total") === 0 && value(zero, "relay_matches_started_total") === 0);
+
+    const host = await connect(s.port, "MTRCROOM", "&mode=create");
+    const guest = await connect(s.port, "mtrcroom", "&mode=join");
+    const third = await connect(s.port, "MTRCROOM", "&mode=join"); // third player: no second "joined" count
+    host.ws.send('{"t":"lock"}');
+    const alone = await connect(s.port, "LONEROOM", "&mode=create"); // created, never joined
+    await new Promise((r) => setTimeout(r, 200));
+    const m = await get(mport, "/metrics");
+    check("metrics: 2 rooms created", value(m.body, "relay_rooms_created_total") === 2);
+    check("metrics: 1 room joined by a second player", value(m.body, "relay_rooms_joined_total") === 1);
+    check("metrics: 1 match started", value(m.body, "relay_matches_started_total") === 1);
+    check("metrics: Prometheus counter format", /# TYPE relay_rooms_created_total counter/.test(m.body));
+    check("metrics: no room codes or addresses", !/MTRC|LONE|127\.0\.0\.1/i.test(m.body));
+    check("metrics not served on the public port (426)", (await get(s.port, "/metrics")).status === 426);
+    check("metrics port serves nothing else (404)", (await get(mport, "/health")).status === 404);
+    closeAll([host, guest, third, alone]);
+    s.server.close();
+}
+
 (async () => {
     try {
+        await metrics();
         const main = await listen();
         await protocol(main.port);
         main.server.close();

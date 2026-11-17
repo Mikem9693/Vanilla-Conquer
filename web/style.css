@@ -260,3 +260,14 @@ body.is-playing #play { display: none; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Footer privacy note: its own full-width line under the footer links. */
+.footer-privacy { flex-basis: 100%; max-width: 72ch; margin: 4px auto 0; text-align: center; }
+
+/* Changelog page (changelog.html, built from CHANGELOG.md by scripts/make-changelog.py) */
+.changelog h2 { margin: 28px 0 0; font-family: var(--display); font-weight: 700; font-size: 24px; color: var(--accent); }
+.changelog h2:first-of-type { margin-top: 8px; }
+.changelog h3 { margin: 14px 0 0; font-family: var(--display); font-weight: 600; font-size: 17px; color: var(--text); }
+.changelog ul { margin: 8px 0 0; padding-left: 20px; }
+.changelog li + li { margin-top: 6px; }
+.back-link { display: inline-block; margin-bottom: 8px; font-weight: 600; }

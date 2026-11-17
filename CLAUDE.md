@@ -24,6 +24,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Multiplayer iteration 1 (relay rooms + Create/Join panel) works locally as of 16 Nov 2026, branch `multiplayer`. The relay is not hosted yet. Details in SPIKE.md "Session 9". On 16 Nov 2026 a screenshot pair confirmed both players see the same units, a 3-player match ran clean, and `scripts/start-local-mp.sh` starts the local servers; details in SPIKE.md "Session 10".
 - On 16 Nov 2026 `multiplayer` was merged into `browser` (fast-forward). On 17 Nov 2026 the relay was prepared for public hosting: only listed site origins may connect unless `DEV=1`; rooms not started within 15 minutes are closed; `relayUrl` must be `wss://` on https pages; licence `GPL-3.0-or-later`. On 17 Nov 2026, at the owner's request, the relay was deployed to Fly.io as `classic-rts-relay` (lhr, one machine): `wss://classic-rts-relay.fly.dev`; details in SPIKE.md "Relay deployed to Fly.io". Run Fly.io commands only when the owner asks.
 
+### Changelog rule (owner, 17 Nov 2026)
+
+- Every change players will notice gets a plain-English line under `## [Unreleased]` in `CHANGELOG.md`, in the same commit as the change.
+- At release, `[Unreleased]` becomes the version and date (for example `## [0.2.1] - 2026-11-18`), and a new empty `[Unreleased]` goes above it.
+- `scripts/build-web-release.sh` builds `changelog.html` from it; the generated page is never committed.
+
 ## What this is
 
 Vanilla Conquer is a portable build of the original Command & Conquer engine (EA's GPLv3 source release). One tree produces two kinds of output for each of the two games:

@@ -58,6 +58,9 @@ done
 cp -r "$repo/web/fonts" "$out/site/"
 # The GPL needs the licence text to travel with the published files.
 cp "$repo/License.txt" "$out/site/LICENSE.txt"
+# Changelog page, built from CHANGELOG.md with the home page's header and footer.
+python3 "$repo/scripts/make-changelog.py" "$repo/CHANGELOG.md" "$repo/web/index.html" "$out/site/changelog.html" \
+    || die "changelog build failed"
 # site-local: local config (localhost data and relay), no _headers. start-local-mp.sh serves it.
 rm -rf "$out/site-local" && cp -r "$out/site" "$out/site-local" && rm "$out/site-local/_headers"
 # site: merge the production settings (R2 data, Fly.io relay) over the local config.
