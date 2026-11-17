@@ -27,10 +27,12 @@ const RULES = {
     overLimitSecs: 5, // over the rate limit this many seconds in a row: close 4007
     idleMs: num("IDLE_MS", 1800000), // no binary frame for 30 min: close 4006
     roomMaxAgeMs: num("ROOM_MAX_AGE_MS", 43200000), // rooms live 12 h at most: close 4006
+    lobbyMaxAgeMs: num("LOBBY_MAX_AGE_MS", 900000), // rooms not locked after 15 min: close 4006
     pingMs: 30000, // heartbeat ping interval; no pong by the next ping: terminate
     tickMs: 1000, // how often counters reset and timeouts are checked
     trustProxy: env.TRUST_PROXY === "1", // take the address from X-Forwarded-For
-    allowedOrigins: (env.ALLOWED_ORIGINS || "") // web pages allowed to connect; empty = any
+    dev: env.DEV === "1", // local work: also accept localhost pages and a missing Origin
+    allowedOrigins: (env.ALLOWED_ORIGINS || "") // web pages allowed to connect; required unless dev
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean),
@@ -48,6 +50,21 @@ const CLOSE = {
     tooFast: [4007, "too fast"],
 };
 const closeWith = (ws, [code, reason]) => ws.close(code, reason);
+
+// Origins fail closed: only listed pages may connect. Dev mode also lets in
+// pages served from this machine, and tools that send no Origin header at all.
+const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+function originAllowed(rules, origin) {
+    if (origin && rules.allowedOrigins.includes(origin)) return true;
+    if (!rules.dev) return false;
+    if (!origin) return true;
+    try {
+        const u = new URL(origin);
+        return (u.protocol === "http:" || u.protocol === "https:") && LOCAL_HOSTS.includes(u.hostname);
+    } catch (e) {
+        return false;
+    }
+}
 
 function sendText(ws, obj) {
     if (ws.readyState === ws.OPEN) ws.send(JSON.stringify(obj));
@@ -177,8 +194,7 @@ function start(host, port, onListening, overrides) {
 
     // Origin check happens before the upgrade: refuse with HTTP 403.
     const verifyClient = (info, done) => {
-        const ok = rules.allowedOrigins.length === 0 || rules.allowedOrigins.includes(info.origin);
-        done(ok, 403, "Forbidden");
+        done(originAllowed(rules, info.origin), 403, "Forbidden");
     };
     const wss = new WebSocketServer({ server, maxPayload: 64 * 1024, verifyClient });
     wss.on("connection", (ws, req) => {
@@ -189,10 +205,12 @@ function start(host, port, onListening, overrides) {
     server.wss = wss;
 
     // Every tick: reset rate counters, close clients too fast or idle, expire old rooms.
+    // A room whose match never started (not locked) expires sooner, freeing its slot.
     const tick = setInterval(() => {
         const now = Date.now();
         for (const [code, room] of rooms) {
-            if (now - room.createdAt > rules.roomMaxAgeMs) {
+            const age = now - room.createdAt;
+            if (age > rules.roomMaxAgeMs || (!room.started && age > rules.lobbyMaxAgeMs)) {
                 rooms.delete(code);
                 for (const cl of room.clients.values()) closeWith(cl.ws, CLOSE.expired);
                 continue;
@@ -233,6 +251,11 @@ function start(host, port, onListening, overrides) {
 module.exports = { start, RULES };
 
 if (require.main === module) {
+    // Refuse to run in public with no origin list: anyone's page could connect.
+    if (!RULES.dev && RULES.allowedOrigins.length === 0) {
+        console.error("relay: set ALLOWED_ORIGINS to the site's origin(s), or DEV=1 for local work");
+        process.exit(1);
+    }
     const server = start(env.HOST || "127.0.0.1", num("PORT", 8002));
     // On SIGTERM/SIGINT: tell every client "going away" (1001), then exit.
     const stop = () => {

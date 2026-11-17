@@ -18,9 +18,11 @@ function check(name, ok) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Start a relay with rule overrides; resolves to { server, port }.
+// Dev mode by default, so test clients without an Origin header get in.
 function listen(overrides) {
+    const rules = Object.assign({ dev: true }, overrides);
     return new Promise((resolve) => {
-        const server = start("127.0.0.1", 0, (srv) => resolve({ server, port: srv.address().port }), overrides);
+        const server = start("127.0.0.1", 0, (srv) => resolve({ server, port: srv.address().port }), rules);
     });
 }
 
@@ -210,6 +212,15 @@ async function limits() {
     check("ROOM_MAX_AGE_MS: everyone closed 4006", r1.closeCode === 4006 && r2.closeCode === 4006);
     s.server.close();
 
+    s = await listen({ lobbyMaxAgeMs: 300, tickMs: 100 });
+    const lobby = await connect(s.port, "lobbyroom");
+    const match = await connect(s.port, "matchroom");
+    match.ws.send('{"t":"lock"}');
+    await sleep(600);
+    check("LOBBY_MAX_AGE_MS: unlocked room closed 4006, locked room kept", lobby.closeCode === 4006 && match.closeCode === null);
+    closeAll([match]);
+    s.server.close();
+
     s = await listen({ pingMs: 100 });
     const deaf = await connect(s.port, "pingroom");
     const live = await connect(s.port, "pingroom");
@@ -220,11 +231,24 @@ async function limits() {
     closeAll([deaf, live]);
     s.server.close();
 
-    s = await listen({ allowedOrigins: ["https://ok.example"] });
+    s = await listen({ dev: false, allowedOrigins: ["https://ok.example"] });
     const evil = await connect(s.port, "origroom", "", { origin: "https://bad.example" });
     const good = await connect(s.port, "origroom", "", { origin: "https://ok.example" });
+    const bare = await connect(s.port, "origroom");
+    const local = await connect(s.port, "origroom", "", { origin: "http://localhost:8000" });
     check("ALLOWED_ORIGINS: unlisted origin gets 403, listed one joins", evil.status === 403 && good.texts.length > 0);
+    check("not dev: missing origin and localhost get 403", bare.status === 403 && local.status === 403);
     closeAll([good]);
+    s.server.close();
+
+    s = await listen({ dev: true, allowedOrigins: [] });
+    const lh = await connect(s.port, "devroom1", "", { origin: "http://localhost:8000" });
+    const lo = await connect(s.port, "devroom1", "", { origin: "http://127.0.0.1:8000" });
+    const v6 = await connect(s.port, "devroom1", "", { origin: "http://[::1]:8000" });
+    const far = await connect(s.port, "devroom1", "", { origin: "https://bad.example" });
+    check("dev: localhost, 127.0.0.1 and [::1] join", [lh, lo, v6].every((cl) => cl.texts.length > 0));
+    check("dev: other origin still gets 403", far.status === 403);
+    closeAll([lh, lo, v6]);
     s.server.close();
 }
 
@@ -232,7 +256,7 @@ async function limits() {
 function signals() {
     return new Promise((resolve) => {
         const child = spawn(process.execPath, [path.join(__dirname, "server.js")], {
-            env: Object.assign({}, process.env, { PORT: "0" }),
+            env: Object.assign({}, process.env, { PORT: "0", DEV: "1" }),
         });
         let client = null;
         child.stdout.on("data", async (d) => {
@@ -249,6 +273,22 @@ function signals() {
     });
 }
 
+// Run directly with no DEV and no ALLOWED_ORIGINS: must refuse to start.
+function refusesOpen() {
+    return new Promise((resolve) => {
+        const env = Object.assign({}, process.env, { PORT: "0" });
+        delete env.DEV;
+        delete env.ALLOWED_ORIGINS;
+        const child = spawn(process.execPath, [path.join(__dirname, "server.js")], { env });
+        let err = "";
+        child.stderr.on("data", (d) => (err += d));
+        child.on("exit", (code) => {
+            check("no ALLOWED_ORIGINS outside dev: exits 1 with a message", code === 1 && /ALLOWED_ORIGINS/.test(err));
+            resolve();
+        });
+    });
+}
+
 (async () => {
     try {
         const main = await listen();
@@ -256,6 +296,7 @@ function signals() {
         main.server.close();
         await limits();
         await signals();
+        await refusesOpen();
     } catch (e) {
         console.log("FAIL exception:", e.message);
         fail++;

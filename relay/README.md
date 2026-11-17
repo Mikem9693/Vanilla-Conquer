@@ -10,7 +10,7 @@ room. It never looks inside the packets.
 ```sh
 cd relay
 npm install            # once; installs the "ws" library
-node server.js         # listens on 127.0.0.1:8002
+DEV=1 node server.js   # listens on 127.0.0.1:8002; DEV=1 allows local pages
 node test.js           # self-test on spare ports; exits non-zero on failure
 ```
 
@@ -35,8 +35,10 @@ request gets status 426, meaning "use a WebSocket".
 | `BYTES_PER_SEC` | `262144` | Bytes per second per player; extra frames are dropped |
 | `IDLE_MS` | `1800000` (30 min) | Disconnect a player who sends no game packet for this long |
 | `ROOM_MAX_AGE_MS` | `43200000` (12 h) | Close a room this long after it was created |
+| `LOBBY_MAX_AGE_MS` | `900000` (15 min) | Close a room whose match has not started (not locked) this long after it was created |
 | `TRUST_PROXY` | off | Set to `1` to take the address from the first `X-Forwarded-For` entry |
-| `ALLOWED_ORIGINS` | empty (any) | Comma-separated list of web page origins allowed to connect; others get HTTP 403 |
+| `ALLOWED_ORIGINS` | empty | Comma-separated list of web page origins allowed to connect; others, and connections with no `Origin` header, get HTTP 403. Required unless `DEV=1`: with it empty the relay refuses to start |
+| `DEV` | off | Set to `1` for local work: also accepts pages from `localhost`, `127.0.0.1` or `[::1]` (any port) and connections with no `Origin` header |
 
 Fixed values (change them in `RULES` in `server.js`): 8 players per room, ids
 1 to 254 never reused, 2048-byte packet limit, 64-byte text limit, a ping every
@@ -53,7 +55,7 @@ Fixed values (change them in `RULES` in `server.js`): 8 players per room, ids
 | 4003 | No such room (`mode=join`) |
 | 4004 | Game started (the room was locked) |
 | 4005 | Relay full: too many rooms, players, or connections from one address |
-| 4006 | Idle, or room expired |
+| 4006 | Idle, or room expired (too old, or not started in time) |
 | 4007 | Too fast: over the rate limit for 5 seconds in a row |
 
 ## What is logged
@@ -63,6 +65,10 @@ joins or leaves. Addresses, room codes and packet contents are never logged or
 saved. The relay keeps addresses in memory only as a count of live connections,
 and drops each address when its last connection closes.
 
+The room code is part of the connection address (`/?room=CODE`), so a hosting
+provider's or proxy's own request logs may record it next to the player's
+address.
+
 ## Hosting notes (untested: nothing is deployed and no provider is chosen)
 
 - A page served over `https://` can only open `wss://` (encrypted) WebSockets.
@@ -70,7 +76,11 @@ and drops each address when its last connection closes.
   (for example nginx or Caddy) that handles TLS and passes WebSocket upgrades
   through to `127.0.0.1:8002`.
 - Behind the proxy, set `TRUST_PROXY=1` so per-address limits see the real
-  player address. Set `ALLOWED_ORIGINS` to the site that serves the game.
+  player address.
+- `ALLOWED_ORIGINS` is required outside dev mode: set it to the site that
+  serves the game (for example `https://example.org`). Without it, and without
+  `DEV=1`, the relay prints an error and exits. Never set `DEV=1` on a public
+  relay.
 - Run it under something that restarts it if it stops (for example a systemd
   service with `Restart=always`). On SIGTERM or SIGINT the relay closes every
   connection with code 1001 and exits.

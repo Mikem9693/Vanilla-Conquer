@@ -16,7 +16,7 @@ start() { # start NAME PORT COMMAND...
 }
 
 [ -d relay/node_modules ] || (cd relay && PATH=$NODE_DIR:$PATH npm install)
-HOST=127.0.0.1 PORT=8002 start relay 8002 "$NODE_DIR/node" relay/server.js
+DEV=1 HOST=127.0.0.1 PORT=8002 start relay 8002 "$NODE_DIR/node" relay/server.js
 start site 8000 python3 -m http.server 8000 -d build-release/site
 start data 8001 python3 scripts/serve-pack.py ~/ra-data/skirmish
 
