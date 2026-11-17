@@ -4,6 +4,8 @@ All notable changes to the browser version that players will notice. Newest firs
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-17
+
 ### Added
 - The game now plays inside the page, so the room panel, help tabs and links stay in view while you play.
 - A changelog page, linked from the header.
