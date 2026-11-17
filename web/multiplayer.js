@@ -6,7 +6,8 @@
  * picks Multiplayer Game > Network. Works before or after Play and data loading.
  *
  * Settings (loader-config.json): "multiplayer": "on" | "off" (off: panel hidden,
- * nothing connects); "relayUrl": "" means ws(s)://<page hostname>:8002.
+ * nothing connects); "relayUrl": "" means ws(s)://<page hostname>:8002. A ws://
+ * relayUrl is refused on an https page (browsers block unencrypted sockets there).
  *
  * Page contract: this script uses only these element IDs.
  *   mp-panel   container; hidden when multiplayer is off
@@ -46,7 +47,8 @@ window.vcMultiplayerInit = function (config, Module) {
         4003: "There is no room with that code. Check the code, or create a new game.",
         4004: "The game in that room has already started, so it is closed to new players.",
         4005: "The multiplayer server is full right now. Please try again in a few minutes.",
-        4006: "The room was closed because it was idle for too long or too old.",
+        4006: "The room was closed because it was idle for too long, its match was not started in time, " +
+              "or it was open too long.",
         4007: "The connection was closed because this browser sent data too fast."
     };
     var ws = null, room = "", peers = 0, inRoom = false, locked = false, gameStarted = false, retried = false;
@@ -89,6 +91,11 @@ window.vcMultiplayerInit = function (config, Module) {
 
     function connect(mode, code) {
         room = code; peers = 0; inRoom = false; locked = false; gameStarted = false;
+        if (location.protocol === "https:" && /^ws:\/\//i.test(config.relayUrl || "")) {
+            ws = null; show();
+            return setStatus("Multiplayer is not available: this secure (https) page cannot use the unencrypted " +
+                             "(ws://) multiplayer server address in its settings. It needs a wss:// address.", "error");
+        }
         setStatus((mode === "create" ? "Creating room " : "Joining room ") + code + "...", "working");
         var sock;
         try {
