@@ -47,10 +47,15 @@ rm -rf "$out/site" && mkdir -p "$out/site"
 cp "$out/vanillara.js" "$out/vanillara.wasm" "$out/site/"
 # Copy the hand-written page, loader and config; collect any that do not exist yet.
 missing=()
-for f in index.html style.css loader.js loader-config.json multiplayer.js _headers; do
+for f in index.html style.css site.js favicon.svg loader.js loader-config.json multiplayer.js _headers; do
     if [ -f "$repo/web/$f" ]; then cp "$repo/web/$f" "$out/site/"; else missing+=("web/$f"); fi
 done
+for f in ChakraPetch-SemiBold.woff2 ChakraPetch-Bold.woff2 Inter-Variable.woff2 OFL-ChakraPetch.txt OFL-Inter.txt; do
+    [ -f "$repo/web/fonts/$f" ] || missing+=("web/fonts/$f")
+done
 [ ${#missing[@]} -eq 0 ] || die "site incomplete, missing: ${missing[*]}"
+# Self-hosted fonts and their licences.
+cp -r "$repo/web/fonts" "$out/site/"
 # The GPL needs the licence text to travel with the published files.
 cp "$repo/License.txt" "$out/site/LICENSE.txt"
 # site-local: local config (localhost data and relay), no _headers. start-local-mp.sh serves it.

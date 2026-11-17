@@ -1,59 +1,194 @@
 <!doctype html>
 <!-- SPDX-License-Identifier: GPL-3.0-or-later -->
-<html lang="en">
+<html lang="en-GB">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Vanilla Red Alert</title>
+<title>Classic RTS: Vanilla Conquer skirmish in your browser</title>
+<meta name="description" content="Unofficial browser build of Vanilla Conquer. Skirmish against the AI or a friend in a private room. Desktop browsers.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
-<h1>Vanilla Red Alert</h1>
 
-<p id="status" data-state="working">Loading...</p>
-<progress id="progress" hidden></progress>
+<!-- Everything inside .page hides when the game starts (body gets .is-playing) -->
+<div class="page">
+<main class="container">
 
-<p>
-  <button id="play" disabled>Play</button>
-  <button id="fullscreen">Fullscreen</button>
-</p>
+  <header class="card site-header">
+    <div class="brand">
+      <svg class="brand-mark" aria-hidden="true" width="44" height="44" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="22" cy="22" r="19"></circle>
+        <circle cx="22" cy="22" r="11"></circle>
+        <line x1="22" y1="22" x2="36" y2="10"></line>
+        <circle cx="30" cy="27" r="2" fill="currentColor"></circle>
+      </svg>
+      <div>
+        <h1 class="brand-title">Classic RTS</h1>
+        <p class="brand-tagline">Vanilla Conquer skirmish in your browser. Fan project, not affiliated with or endorsed by Electronic Arts.</p>
+      </div>
+    </div>
+    <nav class="nav" aria-label="Site">
+      <a class="btn btn-outline" href="#changelog">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="8" y1="6" x2="20" y2="6"></line><line x1="8" y1="12" x2="20" y2="12"></line><line x1="8" y1="18" x2="20" y2="18"></line><line x1="4" y1="6" x2="4.01" y2="6"></line><line x1="4" y1="12" x2="4.01" y2="12"></line><line x1="4" y1="18" x2="4.01" y2="18"></line></svg>
+        Changelog
+      </a>
+      <a class="btn btn-outline" href="https://github.com/Mikem9693/Vanilla-Conquer">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+        Source code
+      </a>
+      <a class="btn btn-outline" href="https://github.com/Mikem9693/Vanilla-Conquer/issues">
+        <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+        Report a bug
+      </a>
+    </nav>
+  </header>
 
-<canvas id="canvas" tabindex="-1"></canvas>
+  <!-- Status and Play: keep the IDs status, progress, play, own-files, clear-data -->
+  <section class="card stack" aria-labelledby="status">
+    <div>
+      <p class="eyebrow">Status</p>
+      <h2 id="status" class="status-text" data-state="working">Loading…</h2>
+      <p class="lead">Skirmish against the AI, or against a friend in a private room.</p>
+    </div>
+    <div class="progress-wrap">
+      <progress id="progress" max="100" value="0" aria-label="Game data download" hidden></progress>
+      <p class="muted small" id="progress-text">This only happens on your first visit.</p>
+    </div>
+    <button id="play" class="btn btn-play" type="button" disabled>Play <kbd class="kbd">Enter</kbd></button>
+    <div class="row-between">
+      <p class="muted small grow">First visit downloads about 28 MB of game data. After that it loads from your browser.</p>
+      <div class="btn-row">
+        <label class="btn btn-outline file-btn">Use my own game files
+          <input id="own-files" class="visually-hidden" type="file" multiple></label>
+        <button id="clear-data" class="btn btn-ghost" type="button">Clear cached data</button>
+      </div>
+    </div>
+  </section>
 
-<section id="mp-panel" hidden>
-  <h2>Multiplayer</h2>
-  <p id="mp-status" data-state="idle"></p>
-  <p>
-    <button id="mp-create">Create game</button>
-    <label>Room code: <input id="mp-code" type="text" size="10" maxlength="32" autocomplete="off" spellcheck="false"></label>
-    <button id="mp-join">Join game</button>
-    <button id="mp-leave" hidden>Leave room</button>
-  </p>
-  <p><input id="mp-link" type="text" readonly size="45" hidden> <button id="mp-copy" hidden>Copy</button></p>
-  <p id="mp-notice"></p>
-</section>
+  <!-- Multiplayer: map these to the real IDs multiplayer.js uses -->
+  <section id="mp-panel" class="card stack" aria-labelledby="mp-heading" hidden>
+    <h2 id="mp-heading" class="section-title">Play with a friend</h2>
+    <p id="mp-status" class="mp-status" data-state="idle" aria-live="polite"></p>
+    <ol class="steps">
+      <li class="step"><span class="step-num">1</span><span>Create a room. You'll get a private link.</span></li>
+      <li class="step"><span class="step-num">2</span><span>Send the link to your friend.</span></li>
+      <li class="step"><span class="step-num">3</span><span>When they join, start the match.</span></li>
+    </ol>
+    <div class="mp-grid">
+      <div class="mp-box">
+        <h3 class="box-title">Host a game</h3>
+        <p class="muted small">You set up the match. Your friend joins from the link.</p>
+        <div class="btn-row">
+          <button id="mp-create" class="btn btn-accent-outline" type="button">Create room</button>
+          <button id="mp-leave" class="btn btn-outline" type="button" hidden>Leave room</button>
+        </div>
+        <div class="field-row">
+          <input id="mp-link" class="input" type="text" readonly aria-label="Room link to send your friend" hidden>
+          <button id="mp-copy" class="btn btn-outline" type="button" hidden>Copy</button>
+        </div>
+      </div>
+      <div class="mp-box">
+        <h3 class="box-title">Join a game</h3>
+        <label class="muted small" for="mp-code">Room code (or just open the link you were sent)</label>
+        <div class="field-row">
+          <input id="mp-code" class="input input-code" type="text" maxlength="32" placeholder="e.g. 7KQ2XM" autocomplete="off" spellcheck="false">
+          <button id="mp-join" class="btn btn-accent-outline" type="button">Join</button>
+        </div>
+      </div>
+    </div>
+    <p id="mp-notice" class="muted small"></p>
+    <p class="muted small">Rooms are private to whoever has the link. Unused links expire after 15 minutes, and a room closes once the match starts. The first room after a quiet spell can take a few seconds while the server wakes up.</p>
+  </section>
 
-<p>
-  <label>Use your own Red Alert files (MAIN.MIX, REDALERT.MIX, and SCORES.MIX if needed):
-    <input id="own-files" type="file" multiple></label>
-</p>
-<p><button id="clear-data">Clear saved game data</button></p>
+  <!-- Game information tabs -->
+  <section class="card card-tabs" aria-label="Game information">
+    <div class="tabs" role="tablist" aria-label="Game information">
+      <button class="tab" type="button" role="tab" id="tab-how" aria-controls="panel-how" aria-selected="true">How to play</button>
+      <button class="tab" type="button" role="tab" id="tab-controls" aria-controls="panel-controls" aria-selected="false" tabindex="-1">Controls</button>
+      <button class="tab" type="button" role="tab" id="tab-browsers" aria-controls="panel-browsers" aria-selected="false" tabindex="-1">Browser support</button>
+      <button class="tab" type="button" role="tab" id="tab-faq" aria-controls="panel-faq" aria-selected="false" tabindex="-1">FAQ</button>
+    </div>
 
-<footer>
-  <p>Vanilla Conquer Skirmish in Browser: an unofficial, modified build of Vanilla Conquer.
-     Free software under the <a href="LICENSE.txt">GNU GPL v3 with EA's additional terms</a>,
-     provided as is, with no warranty.
-     <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.1.0">Source code for this version</a>.</p>
-  <p>Built on <a href="https://github.com/TheAssemblyArmada/Vanilla-Conquer">Vanilla Conquer</a>
-     and source code released by Electronic Arts. Not affiliated with or endorsed by Electronic Arts.
-     Game content © Electronic Arts. Removal requests: <a href="mailto:mikemautomation@gmail.com">mikemautomation@gmail.com</a>.</p>
-  <p>Privacy: no accounts, analytics or tracking cookies. Game data is cached in your browser.
-     "Use my own files" never uploads them. The multiplayer relay sees your IP address
-     to connect players and doesn't store it. Our hosting provider may keep standard connection logs
-     for a short time.</p>
-</footer>
+    <div class="tab-panel prose" role="tabpanel" id="panel-how" aria-labelledby="tab-how" tabindex="0">
+      <p><strong>Against the AI:</strong> press Play, choose Skirmish from the game menu, then pick your map, opponents and starting credits.</p>
+      <p><strong>Against a friend:</strong> use Play with a friend above. Both of you need this page open in a desktop browser.</p>
+      <p><strong>Leaving a match:</strong> to play again after exiting, refresh the page.</p>
+    </div>
+
+    <div class="tab-panel" role="tabpanel" id="panel-controls" aria-labelledby="tab-controls" tabindex="0" hidden>
+      <dl class="def-list">
+        <dt>Left-click</dt><dd>Select a unit, then click to move or attack</dd>
+        <dt>Click and drag</dt><dd>Box-select several units</dd>
+        <dt>Ctrl + 1 to 9</dt><dd>Make a group from the selected units</dd>
+        <dt>1 to 9</dt><dd>Select that group</dd>
+        <dt>Fullscreen</dt><dd>[CONFIRM: fullscreen key or button]</dd>
+      </dl>
+    </div>
+
+    <div class="tab-panel prose" role="tabpanel" id="panel-browsers" aria-labelledby="tab-browsers" tabindex="0" hidden>
+      <ul>
+        <li>Desktop Firefox, Edge and Chrome. Phones and tablets aren't supported, as the game needs a mouse and keyboard.</li>
+        <li>Skirmish against the AI pauses while the tab is hidden, and carries on when you come back.</li>
+        <li>Game data is stored in your browser. Clearing site data, or Clear cached data above, removes it.</li>
+      </ul>
+    </div>
+
+    <div class="tab-panel faq" role="tabpanel" id="panel-faq" aria-labelledby="tab-faq" tabindex="0" hidden>
+      <div><h3>Is this official?</h3><p>No. It's an unofficial fan project, not affiliated with or endorsed by Electronic Arts or the Vanilla Conquer team.</p></div>
+      <div><h3>Do I need to own the game?</h3><p>No. The page loads the freeware game data for you. If you prefer, you can use your own files instead, and they never leave your computer.</p></div>
+      <div><h3>Does it save my games?</h3><p>Not yet. Saved games are on the list for a future version.</p></div>
+      <div><h3>What about the campaigns?</h3><p>Planned for a later version. This release covers skirmish against the AI and private multiplayer rooms.</p></div>
+    </div>
+  </section>
+
+  <!-- About tabs -->
+  <section class="card card-tabs" aria-label="About this project">
+    <div class="tabs" role="tablist" aria-label="About this project">
+      <button class="tab" type="button" role="tab" id="tab-about" aria-controls="panel-about" aria-selected="true">About</button>
+      <button class="tab" type="button" role="tab" id="tab-credits" aria-controls="panel-credits" aria-selected="false" tabindex="-1">Credits</button>
+      <button class="tab" type="button" role="tab" id="tab-legal" aria-controls="panel-legal" aria-selected="false" tabindex="-1">Licence and privacy</button>
+    </div>
+
+    <div class="tab-panel prose" role="tabpanel" id="panel-about" aria-labelledby="tab-about" tabindex="0">
+      <p>Classic RTS runs the 1996 game's own code in your browser. It's built on Vanilla Conquer, an open-source update of the engine Electronic Arts released under the GPL, and compiled to WebAssembly. There's no emulator involved.</p>
+      <p>[YOUR STORY: a sentence or two on why you built it.]</p>
+      <p>Built by Mikem9693 as a project in managing software work with AI. <a href="#case-study">Read how it was built</a>.</p>
+      <p>Bugs and questions: <a href="https://github.com/Mikem9693/Vanilla-Conquer/issues">GitHub Issues</a>. Rights holders: <a href="mailto:mikemautomation@gmail.com">mikemautomation@gmail.com</a>.</p>
+    </div>
+
+    <div class="tab-panel" role="tabpanel" id="panel-credits" aria-labelledby="tab-credits" tabindex="0" hidden>
+      <dl class="def-list def-list-wide">
+        <dt>Original source code</dt><dd>Electronic Arts, released under the GPL</dd>
+        <dt>Engine</dt><dd><a href="https://github.com/TheAssemblyArmada/Vanilla-Conquer">Vanilla Conquer</a>, by The Assembly Armada</dd>
+        <dt>Browser port</dt><dd>Loader, multiplayer relay and site by Mikem9693</dd>
+      </dl>
+    </div>
+
+    <div class="tab-panel prose" role="tabpanel" id="panel-legal" aria-labelledby="tab-legal" tabindex="0" hidden>
+      <p><strong>Licence:</strong> free software under the <a href="LICENSE.txt">GNU GPL v3 with EA's additional terms</a>, provided as is, with no warranty. <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.2.0">Source code for this version</a>.</p>
+      <p><strong>Trademarks:</strong> Command &amp; Conquer and Red Alert are trademarks of Electronic Arts. No trademark rights are granted or claimed. Game content © Electronic Arts.</p>
+      <p><strong>Privacy:</strong> no accounts, analytics or tracking cookies. Game data is cached in your browser, and your own files are never uploaded. The multiplayer relay sees your IP address to connect players and doesn't store it. Our hosting provider may keep standard connection logs for a short time.</p>
+    </div>
+  </section>
+
+  <footer class="site-footer">
+    <span>Unofficial. Not affiliated with Electronic Arts.</span>
+    <a href="LICENSE.txt">GPL v3 licence</a>
+    <a href="https://github.com/Mikem9693/Vanilla-Conquer/tree/v0.2.0">Source for v0.2.0</a>
+    <span>Removal requests: <a href="mailto:mikemautomation@gmail.com">mikemautomation@gmail.com</a></span>
+  </footer>
+
+</main>
+</div>
+
+<!-- The game canvas: shown when body has .is-playing. Keep the existing canvas element and its ID. -->
+<canvas id="canvas" class="game-canvas" tabindex="-1"></canvas>
+<!-- Shown only while playing, below the canvas so it never covers the game. -->
+<div class="game-bar"><button id="fullscreen" class="btn btn-outline" type="button">Fullscreen</button></div>
 
 <script src="multiplayer.js"></script>
 <script src="loader.js"></script>
+<script src="site.js" defer></script>
 </body>
 </html>

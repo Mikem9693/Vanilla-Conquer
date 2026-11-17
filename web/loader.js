@@ -266,6 +266,9 @@
         playBtn.disabled = true;
         ownInput.disabled = true;
         setStatus("Game running.", "ready");
+        // style.css hides the page and shows the canvas. Done first: a hidden canvas can't take focus,
+        // and SDL should see a visible canvas when it starts.
+        document.body.classList.add("is-playing");
         canvas.focus();
         Module.callMain([]);
     });
