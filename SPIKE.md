@@ -2068,8 +2068,8 @@ Full comparison with all links: `~/ra-data/session11/hosting.md`. Prices and lim
 ### Open items
 
 - With the owner: choose the host (Fly.io recommended); a full play-through.
-- After a room expires the page still says "You can join it again", which is wrong because the room is gone (joining gives 4003). Same for the 12-hour expiry.
-- A refused origin shows the generic "Could not connect to the multiplayer server" message.
+- Done in `f014f48`: after a room expires (15-minute lobby or 12-hour limit) the page now says "This room has closed: its match was not started in time, or it was open too long. The room no longer exists, so create a new game to play." and no longer offers to rejoin.
+- Done in `f014f48`: a refused origin now shows "The multiplayer server is running but did not accept this site. This is a set-up problem with the site, not your connection: the site's address must be on the multiplayer server's allowed list."
 - The room code travels in the connection URL, so a host's request logs may record it. Changing that is a protocol change.
 - The Fly.io points in "Not verified" above are not checked on official pages.
 - The message rate per player (used in the Cloudflare estimate) has not been measured.
@@ -2081,6 +2081,14 @@ Full comparison with all links: `~/ra-data/session11/hosting.md`. Prices and lim
 - The Read tool cannot open files outside the repository folder (a permission setting), so the worker reports in `~/ra-data/session11/` could not be read by the notes worker. Save future reports inside the repository's `build-release/` folder (outside version control) instead.
 - The frame-counter address is still stale (`monitor.js` shows fps 0).
 
+### Message fixes (17 Nov 2026)
+
+- `f014f48` changes only `web/multiplayer.js`. The relay closes an expired room with code 4006 and reason "room expired", and an idle player with 4006 and reason "idle"; the page now tells them apart by the reason. Expired: create a new game. Idle: "The connection was closed because nothing was sent for too long." followed by the old rejoin text, since that room may still exist.
+- A browser cannot see the 403 of a refused WebSocket handshake. So when the socket fails before it ever opens, the page makes one `no-cors` fetch of the relay's `/health` (3 s timeout). If it answers, the page shows the "did not accept this site" message; if not, the old "Could not connect to the multiplayer server. Check your connection and try again." `web/index.html` has no Content-Security-Policy, so nothing blocks that fetch.
+- [obs] Build: 0 errors, 0 warnings. With a second relay on 8003: expired room, refused origin and server stopped each showed the message above. Two browsers on the dev relay (8002) reached the same lobby with no console errors. The relay was not changed, so its tests were not rerun.
+- Owner decision (17 Nov 2026): the owner will do the Fly.io set-up personally. No worker is to run, install, configure or sign in to anything related to Fly.io.
+- Screenshots: `s11c-expired.png`, `s11c-refused.png`, `s11c-down.png`, `s11c-lobby-A.png`, `s11c-lobby-B.png`. Report: `build-release/reports/session11/worker-a3.md`.
+
 ### Hand-off
 
-Code commits `78a8d46`, `0f03e0c`, `cc02645`, then the notes commit "Notes: session 11 merge, relay hardening, hosting". Nothing deployed and nothing pushed: `browser` is ahead of `origin/browser`. Local servers left running: 8000 (site), 8001 (data), 8002 (relay, new code, `DEV=1`). Headless Edge instances closed.
+Code commits `78a8d46`, `0f03e0c`, `cc02645`, then the notes commit "Notes: session 11 merge, relay hardening, hosting", then `f014f48` "Web: clearer messages for an expired room and a refused page" and the notes commit "Notes: session 11 message fixes". Nothing deployed and nothing pushed: `browser` is ahead of `origin/browser`. Local servers left running: 8000 (site), 8001 (data), 8002 (relay, new code, `DEV=1`). Headless Edge instances closed.

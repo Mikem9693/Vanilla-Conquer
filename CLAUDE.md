@@ -22,7 +22,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Rules (unchanged): no game data ever goes in this repo or in committed build output. The packaged demo in `build-web/` is for local testing only.
 - Loader built on 15 Nov 2026: `web/`, release build via `scripts/build-web-release.sh`; details in SPIKE.md "Session 8: Loader". Deployment and keeping saved games between visits are still to do.
 - Multiplayer iteration 1 (relay rooms + Create/Join panel) works locally as of 16 Nov 2026, branch `multiplayer`. The relay is not hosted yet. Details in SPIKE.md "Session 9". On 16 Nov 2026 a screenshot pair confirmed both players see the same units, a 3-player match ran clean, and `scripts/start-local-mp.sh` starts the local servers; details in SPIKE.md "Session 10".
-- On 16 Nov 2026 `multiplayer` was merged into `browser` (fast-forward). On 17 Nov 2026 the relay was prepared for public hosting: only listed site origins may connect unless `DEV=1`; rooms not started within 15 minutes are closed; `relayUrl` must be `wss://` on https pages; licence `GPL-3.0-or-later`. The relay is still not hosted; a hosting comparison (recommending Fly.io, awaiting the owner's decision) is in SPIKE.md "Session 11".
+- On 16 Nov 2026 `multiplayer` was merged into `browser` (fast-forward). On 17 Nov 2026 the relay was prepared for public hosting: only listed site origins may connect unless `DEV=1`; rooms not started within 15 minutes are closed; `relayUrl` must be `wss://` on https pages; licence `GPL-3.0-or-later`. The relay is still not hosted; a hosting comparison (recommending Fly.io; the owner will set up Fly.io personally (17 Nov 2026), and workers must not run anything related to it) is in SPIKE.md "Session 11".
 
 ## What this is
 
