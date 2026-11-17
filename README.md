@@ -1,3 +1,47 @@
+# Vanilla Conquer Skirmish in Browser (Unofficial)
+
+A WebAssembly build of [Vanilla Conquer](https://github.com/TheAssemblyArmada/Vanilla-Conquer)
+that runs the classic Red Alert (1996) game data in a desktop browser.
+
+**Play:** coming soon
+
+## Status
+- Skirmish against the AI: playable
+- Multiplayer (private rooms by invite link): in development
+- Campaigns: planned
+
+## Changes from Vanilla Conquer
+This is a modified version of Vanilla Conquer, changed by Mikem9693 in
+2026 (first changes November 2026). Main changes:
+- Browser build with Emscripten (WebAssembly), including a fix for the
+  game freezing when the window loses focus
+- Intro and cutscene movies skipped in the browser build
+- Fixes for a crate-related crash and a music loop hang
+- Fullscreen fix with whole-number scaling
+- The game holds while the browser tab is hidden
+- Web loader: uses hosted game data or the player's own files, cached
+  in the browser and checked with SHA-256
+
+## Licence and credits
+Free software under the GNU General Public License v3, including the
+additional terms from Electronic Arts' source release (see LICENSE).
+
+- Original source code: Electronic Arts
+- Engine: Vanilla Conquer, by The Assembly Armada
+- Browser port, loader and scripts: Mikem9693
+
+Unofficial project, not affiliated with or endorsed by Electronic Arts or
+The Assembly Armada. Command & Conquer and Red Alert are trademarks of
+Electronic Arts; no trademark rights are granted or claimed.
+
+This repository contains no game data. Game content remains the property
+of Electronic Arts.
+
+---
+*Original Vanilla Conquer README follows.*
+
+
+
 # Vanilla Conquer
 Vanilla Conquer is a fully portable version of the first generation C&C engine and is capable of running both Tiberian Dawn and Red Alert on multiple platforms. It can also be used for mod development for the Remastered Collection.
 
