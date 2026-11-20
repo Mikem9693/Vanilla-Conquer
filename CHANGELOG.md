@@ -2,6 +2,11 @@
 
 All notable changes to the browser version that players will notice. Newest first.
 
+## [Unreleased]
+
+### Changed
+- The page title, search description and tagline now say "Red Alert in your browser" instead of naming Vanilla Conquer.
+
 ## [0.2.2] - 2026-11-20
 
 ### Fixed
