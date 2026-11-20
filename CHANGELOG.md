@@ -2,8 +2,6 @@
 
 All notable changes to the browser version that players will notice. Newest first.
 
-## [Unreleased]
-
 ## [0.2.2] - 2026-11-20
 
 ### Fixed
