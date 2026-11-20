@@ -4,6 +4,11 @@ All notable changes to the browser version that players will notice. Newest firs
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-20
+
+### Fixed
+- Music now plays for every player in multiplayer, and the lobby chat box no longer disappears, when the game is not the window you last clicked. The game now only pauses its music when its tab is hidden or its window is minimised.
+
 ## [0.2.1] - 2026-11-17
 
 ### Added

@@ -85,14 +85,25 @@ void WWKeyboardClassSDL2::Fill_Buffer_From_System(void)
         } break;
         case SDL_WINDOWEVENT:
             switch (event.window.event) {
+            /*
+            ** In the browser, keyboard focus is not "player away": with two game windows, or a click
+            ** elsewhere on the page, music must keep playing and lobby chat must stay visible. Only a
+            ** hidden tab or minimised window (page visibility, sent as HIDDEN/SHOWN) counts as away.
+            */
             case SDL_WINDOWEVENT_EXPOSED:
             case SDL_WINDOWEVENT_RESTORED:
+#ifdef __EMSCRIPTEN__
+            case SDL_WINDOWEVENT_SHOWN:
+#else
             case SDL_WINDOWEVENT_FOCUS_GAINED:
+#endif
                 Focus_Restore();
                 break;
             case SDL_WINDOWEVENT_HIDDEN:
             case SDL_WINDOWEVENT_MINIMIZED:
+#ifndef __EMSCRIPTEN__
             case SDL_WINDOWEVENT_FOCUS_LOST:
+#endif
                 Focus_Loss();
                 break;
             }
